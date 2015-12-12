@@ -22,6 +22,8 @@ type alias Ship =
 
 type alias Wall = Positioned { w: Float, h: Float }
 
+type alias Fire = Positioned { size: Float }
+
 type alias Smoke = Positioned { vx: Float, vy: Float, age: Int, size: Float }
 
 type GameState = Game | Dead
@@ -30,6 +32,7 @@ type alias Model =
   {
     defaultWalls : List Wall,
     walls : List Wall,
+    fires : List Fire,
     ship: Ship,
     state: GameState,
     smokes: List Smoke,
@@ -40,9 +43,9 @@ type alias Model =
 
 startWalls : List Wall
 startWalls = [
-               {x= -200, y= 100, w= 400, h= 20 }
-             , {x= 200, y= 300, w= 400, h= 20 }
-             , {x= -250, y= 300, w= 100, h= 20 }
+               --{x= -200, y= 100, w= 400, h= 20 }
+             --, {x= 200, y= 300, w= 400, h= 20 }
+             --, {x= -250, y= 300, w= 100, h= 20 }
              ]
 
 defaultWalls : List Wall
@@ -52,7 +55,20 @@ defaultWalls = [
                ]
 
 defaultModel : Model
-defaultModel = Model defaultWalls startWalls {x= 0, y= -300, vx=0, vy=0, a=0, size=30} Game [] 0
+defaultModel = Model
+                  defaultWalls
+                  startWalls
+                  [
+
+
+  {x= -236, y= 0, size= 32},{x= -172, y= 0, size= 32},{x= -108, y= 0, size= 32},{x= -44, y= 0, size= 32},{x= 84, y= 0, size= 32},{x= 148, y= 0, size= 32},{x= 212, y= 0, size= 32},{x= 276, y= 0, size= 32},{x= -236, y= 64, size= 32},{x= -172, y= 64, size= 32},{x= -108, y= 64, size= 32},{x= -44, y= 64, size= 32},{x= 84, y= 64, size= 32},{x= 148, y= 64, size= 32},{x= 212, y= 64, size= 32},{x= 276, y= 64, size= 32},{x= -236, y= 128, size= 32},{x= -236, y= 256, size= 32},{x= -172, y= 256, size= 32},{x= -108, y= 256, size= 32},{x= 84, y= 256, size= 32}
+
+
+                    ]
+                  {x= 0, y= -300, vx=0, vy=0, a=0, size= 28}
+                  Game
+                  []
+                  0
 --model = Model [ Wall { -100 100 500 20} ] {x=0, y=0, vx=0, vy=0, a=0}
 
 type alias Keys = { x: Int, y: Int }
@@ -96,7 +112,7 @@ update (dt, keys, ltch) model =
                               { s' | age = s'.age - 1 }
                     )
                     (List.filter
-                      (\s -> s.age > 0)
+                      (\s -> s.age > 0 && s.x > -gameWidth/2 && s.x < gameWidth/2)
                       (model.smokes ++
                         if button2Pressed then
                           let
@@ -109,30 +125,42 @@ update (dt, keys, ltch) model =
                             --_ = log "vy" (-vy)
                             rotate = -0.3 + (toFloat (randomInt model.t 0 100)/100) * 0.6
                             (nvx, nvy) = rotateVec -vx -vy rotate
-                            _ = log "nvx nvy" (nvx, nvy)
+                            --_ = log "nvx nvy" (nvx, nvy)
                           in
                             [ {
                               x=ship'.x
                             , y=ship'.y
                             , vx= (nvx)*10
                             , vy= (nvy)*10
-                            , age= randomInt model.t 3 20
-                            , size= 10} ]
+                            , age= randomInt model.t 3 10
+                            , size= (toFloat 10) } ]
                         else []
                     ))
 
         walls' = List.map (physics 0 -model.ship.vy dt) model.walls
 
+        fires' = List.map (physics 0 -model.ship.vy dt) model.fires
+                  |> List.filter (\f -> List.all (\x -> not x) (List.map (\s -> collisionCircle s f) smokes' ))
+        
+--        fires'' = if randomInt model.t 0 100 < 10 then
+--                     case (List.head (List.take (randomInt model.t 0 ((List.length fires') - 1)) fires')) of
+--                       Just f -> fires' ++ [(findAdjacent model.fires f)]
+--                       Nothing -> fires'
+--                  else fires'
+
         state' = if (List.any identity (
-                        (List.map (collision ship') walls') ++
-                        List.map (collision ship') model.defaultWalls
-                      )) then
+                        (List.map (collision ship') walls') ++ [ship'.x < -gameWidth/2, ship'.x > gameWidth/2]
+                        --List.map (collision ship') model.defaultWalls
+                      ))
+                      || List.any identity (List.map (collisionCircle ship') model.fires)
+                      then
                    Dead
                  else
                    model.state
       in
         { model |
           walls = walls',
+          fires = fires',
           ship = ship',
           state = state',
           smokes = smokes',
@@ -140,6 +168,18 @@ update (dt, keys, ltch) model =
         }
     Dead ->
       model
+
+findAdjacent : List Fire -> Fire -> Fire
+findAdjacent lst fire = if (not (List.any (\f -> f.x == fire.x - 64 && f.y == fire.y) lst ) ) then
+                           { x = fire.x - 64, y = fire.y, size= 32 }
+                        else if not (List.any (\f -> f.x == fire.x + 64 && f.y == fire.y) lst ) then
+                           { x = fire.x + 64, y = fire.y , size= 32 }
+                        else if not (List.any (\f -> f.x == fire.x && f.y == fire.y - 64) lst ) then
+                           { x = fire.x, y = fire.y - 64 , size= 32 }
+                        else if not (List.any (\f -> f.x == fire.x && f.y == fire.y + 64) lst ) then
+                           { x = fire.x, y = fire.y + 64 , size= 32 }
+                        else
+                           { x = fire.x, y = fire.y , size= 32 }
 
 
 rotateShip : Bool -> Float -> Ship -> Ship
@@ -167,11 +207,19 @@ physics vx vy dt obj = { obj | x = obj.x + dt * vx, y = obj.y + dt * vy }
 
 friction dt obj = { obj | vx = obj.vx * (1 - (0.1 / dt)) , vy = obj.vy * (1 - (0.1 / dt)) }
 
+collisionCircle a b = let
+                          dst = (dist (a.x, a.y) (b.x, b.y))
+                          --_ = log "size" (a.size +  b.size)
+                          --_ = log "dst" dst
+                          --_ = log "a b" ((a.x, a.y),  (b.x, b.y))
+                      in
+                         dst < (a.size + b.size)
+
 collision : Ship -> Wall -> Bool
 collision ship wall = (dist (ship.x, ship.y) (getClosest ship wall)) < ship.size
 
 dist : (Float, Float) -> (Float, Float) -> Float
-dist (x,y) (x2,y2) = sqrt ((x - x2) ^ 2) + ((y - y2) ^ 2)
+dist (x,y) (x2,y2) = (sqrt ( ((x2 - x) ^ 2) + ((y2 - y) ^ 2) ))
 
 getClosest ship wall =
   if ship.y > wall.y+wall.h/2 then -- TOP
@@ -205,6 +253,13 @@ drawSmoke (xr, yr) smoke = image 60 60 "img/smoke.png"
                             |> toForm
                             |> move (smoke.x * xr + smoke.vx * 6, smoke.y * yr + smoke.vy * 6)
 
+drawFire (xr, yr) fire = group [
+                      --circle (fire.size * (xr+yr)/2) |> filled (rgb 255 0 0) |> move (fire.x * xr, fire.y * yr) ,
+                          image (round (64*xr)) (round (64*yr)) "img/fire.png"
+                            |> toForm
+                            |> move (fire.x * xr, fire.y * yr)
+                      ]
+
 drawWall : (Float, Float) -> Wall -> Form
 drawWall (xr, yr) wall = rect (wall.w * xr) (wall.h * yr)
                             |> filled (rgb 0 0 0)
@@ -212,10 +267,10 @@ drawWall (xr, yr) wall = rect (wall.w * xr) (wall.h * yr)
 
 drawShip : (Float, Float) -> Ship -> Form
 drawShip (xr, yr) ship = group [
-                    image 60 100 "img/player.png"
+                      --circle (ship.size * (xr+yr)/2) |> filled (rgb 255 0 0) ,
+                    image (round (60*xr)) (round (100*yr)) "img/player.png"
                       |> toForm
                       |> move (0, -10)
-                      --, circle (ship.size * (xr+yr)/2) |> filled (rgb 255 0 0)
 --                  rect 10 50
 --                    |> filled (rgb 0 0 0)
 --                    |> move (0, -20)
@@ -228,20 +283,21 @@ view (w',h') model =
   let
     (w,h) = (toFloat w', toFloat h')
 
-    (xRatio, yRatio) = ((w/gameWidth), (h/gameHeight))
+    (xRatio, yRatio) = (1, 1) -- ((w/gameWidth), (h/gameHeight))
   in
     collage w' h'
       ([ rect w h
           |> filled (rgb 174 238 238),
-        drawShip (xRatio, yRatio) model.ship,
-        toForm (show (getvecship model.ship))
-          |> move (-100, -100),
-        toForm (show model.ship.a)
-          |> move (-100, -150)
+        drawShip (xRatio, yRatio) model.ship
+        --toForm (show (getvecship model.ship))
+          --|> move (-100, -100),
+        --toForm (show model.ship.a)
+          --|> move (-100, -150)
       ] ++
       (List.map (drawWall (xRatio, yRatio)) model.walls) ++
       (List.map (drawWall (xRatio, yRatio)) model.defaultWalls) ++
       (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
+      (List.map (drawFire (xRatio, yRatio)) model.fires) ++
       case model.state of
         Dead -> [toForm (show "YOU DEAD!")
                   |> move (100, 50) ]
