@@ -16,19 +16,23 @@ type alias Ship =
     vx : Float
   , vy : Float
   , a : Float
+  , size: Float
   }
 
-type alias Wall = Positioned { w: Int, h: Int }
+type alias Wall = Positioned { w: Float, h: Float }
+
+type GameState = Game | Dead
 
 type alias Model =
   {
     walls : List Wall,
-    ship: Ship
+    ship: Ship,
+    state: GameState
   }
 
 
-model : Model
-model = Model [ {x= -100, y=100, w= 500, h= 20 } ] {x=0, y=0, vx=0, vy=0, a=0}
+defaultModel : Model
+defaultModel = Model [ {x= -100, y=100, w= 500, h= 20 } ] {x=0, y=0, vx=0, vy=0, a=0, size=10} Game
 --model = Model [ Wall { -100 100 500 20} ] {x=0, y=0, vx=0, vy=0, a=0}
 
 type alias Keys = { x: Int, y: Int }
@@ -40,20 +44,30 @@ getvecship ship = (-(sin ship.a), (cos ship.a))
 
 --update : (Float, Keys) -> Model -> Model
 update (dt, keys) model =
-  let
-    vec = getvecship model.ship
-    --_ = log "> " vec
-    ship' = model.ship
-      |> rotateShip keys.x dt
-      |> thrust keys.y dt
-      |> physics model.ship.vx 0 dt
+  case model.state of
+    Game ->
+      let
+        vec = getvecship model.ship
+        --_ = log "> " vec
+        ship' = model.ship
+          |> rotateShip keys.x dt
+          |> thrust keys.y dt
+          |> physics model.ship.vx 0 dt
 
-    walls' = List.map (physics 0 -model.ship.vy dt) model.walls
-  in
-    { model |
-      walls = walls',
-      ship = ship'
-    }
+        walls' = List.map (physics 0 -model.ship.vy dt) model.walls
+
+        state' = if (List.any identity (List.map (collision ship') walls')) then
+                   Dead
+                 else
+                   model.state
+      in
+        { model |
+          walls = walls',
+          ship = ship',
+          state = state'
+        }
+    Dead ->
+      model
 
 
 rotateShip : Int -> Float -> Ship -> Ship
@@ -79,16 +93,44 @@ thrust y dt ship = if y == 1 then
 --physics : Float -> Float -> Float -> Positioned {} -> Positioned {}
 physics vx vy dt obj = { obj | x = obj.x + dt * vx, y = obj.y + dt * vy }
 
+collision : Ship -> Wall -> Bool
+collision ship wall = (dist (ship.x, ship.y) (getClosest ship wall)) < ship.size
+
+dist : (Float, Float) -> (Float, Float) -> Float
+dist (x,y) (x2,y2) = sqrt ((x - x2) ^ 2) + ((y - y2) ^ 2)
+
+getClosest ship wall =
+  if ship.y > wall.y+wall.h/2 then -- TOP
+    if ship.x < wall.x-wall.w/2 then -- top-left
+       (wall.x - wall.w/2, wall.y + wall.h/2)
+    else if ship.x < wall.x+wall.w/2 && ship.x > wall.x-wall.w/2 then -- top-middle
+       (ship.x, wall.y + wall.h/2)
+    else -- top-right
+       (wall.x + wall.w/2, wall.y + wall.h/2)
+  else if ship.y < wall.y+wall.h/2 && ship.y > wall.y-wall.h/2 then -- MIDDLE
+    if ship.x < wall.x-wall.w/2 then -- middle-left
+       (wall.x - wall.w/2, ship.y)
+    else -- middle-right
+       (wall.x + wall.w/2, ship.y)
+  else -- BOTTOM
+    if ship.x < wall.x-wall.w/2 then -- bottom-left
+       (wall.x - wall.w/2, wall.y - wall.h/2)
+    else if ship.x < wall.x+wall.w/2 && ship.x > wall.x-wall.w/2 then -- bottom-middle
+       (ship.x, wall.y - wall.h/2)
+    else -- bottom-right
+       (wall.x + wall.w/2, wall.y - wall.h/2)
+
+
 -- VIEW
 
 drawWall : Wall -> Form
-drawWall wall = rect (toFloat wall.w) (toFloat wall.h)
+drawWall wall = rect wall.w wall.h
                   |> filled (rgb 0 0 0)
                   |> move (wall.x, wall.y)
 
 drawShip : Ship -> Form
 drawShip ship = group [
-                  circle 20
+                  circle ship.size
                     |> filled (rgb 255 0 0)
                   ,
                   rect 10 50
@@ -111,7 +153,11 @@ view (w',h') model =
           |> move (-100, -100),
         toForm (show model.ship.a)
           |> move (-100, -150)
-      ] ++ (List.map drawWall model.walls)
+      ] ++ (List.map drawWall model.walls) ++
+        case model.state of
+          Dead -> [toForm (show "YOU DEAD!")
+                    |> move (100, 50) ]
+          _ -> []
     )
 
 
@@ -119,7 +165,7 @@ view (w',h') model =
 
 main : Signal Element
 main =
-  Signal.map2 view Window.dimensions (Signal.foldp update model input)
+  Signal.map2 view Window.dimensions (Signal.foldp update defaultModel input)
 
 
 input : Signal (Float, Keys)
