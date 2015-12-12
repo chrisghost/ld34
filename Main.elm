@@ -5,6 +5,7 @@ import Keyboard
 import Time exposing (..)
 import Window
 import Debug exposing (..)
+import Touch
 
 
 -- MODEL
@@ -37,6 +38,7 @@ startWalls : List Wall
 startWalls = [
                {x= -200, y= 100, w= 400, h= 20 }
              , {x= 200, y= 300, w= 400, h= 20 }
+             , {x= -250, y= 300, w= 100, h= 20 }
              ]
 
 defaultWalls : List Wall
@@ -46,7 +48,7 @@ defaultWalls = [
                ]
 
 defaultModel : Model
-defaultModel = Model defaultWalls startWalls {x=0, y=0, vx=0, vy=0, a=0, size=10} Game
+defaultModel = Model defaultWalls startWalls {x= 0, y= -300, vx=0, vy=0, a=0, size=10} Game
 --model = Model [ Wall { -100 100 500 20} ] {x=0, y=0, vx=0, vy=0, a=0}
 
 type alias Keys = { x: Int, y: Int }
@@ -57,15 +59,17 @@ getvecship : Ship -> (Float, Float)
 getvecship ship = (-(sin ship.a), (cos ship.a))
 
 --update : (Float, Keys) -> Model -> Model
-update (dt, keys) model =
+update (dt, keys, ltch) model =
   case model.state of
     Game ->
       let
         vec = getvecship model.ship
-        --_ = log "> " vec
+        button1Pressed = keys.x == -1 || List.any (\t -> t.x < 0) ltch
+        button2Pressed = keys.y ==  1 || List.any (\t -> t.x > 0) ltch
+        _ = log ">>" ltch
         ship' = model.ship
-          |> rotateShip keys.x dt
-          |> thrust keys.y dt
+          |> rotateShip button1Pressed dt
+          |> thrust button2Pressed dt
           |> physics model.ship.vx 0 dt
 
         walls' = List.map (physics 0 -model.ship.vy dt) model.walls
@@ -87,14 +91,14 @@ update (dt, keys) model =
       model
 
 
-rotateShip : Int -> Float -> Ship -> Ship
-rotateShip x dt ship = if x == -1 then
+rotateShip : Bool -> Float -> Ship -> Ship
+rotateShip x dt ship = if x then
                           { ship | a = ship.a + (dt * 0.1) }
                        else
                           ship
 
-thrust : Int -> Float -> Ship -> Ship
-thrust y dt ship = if y == 1 then
+thrust : Bool -> Float -> Ship -> Ship
+thrust y dt ship = if y then
                      let
                        (xt', yt') = (getvecship ship)
                        (xt, yt) = (xt' * 0.3, yt' * 0.3)
@@ -191,9 +195,9 @@ main =
   Signal.map2 view Window.dimensions (Signal.foldp update defaultModel input)
 
 
-input : Signal (Float, Keys)
+input : Signal (Float, Keys, List Touch.Touch)
 input =
   let
     delta = Signal.map (\t -> t/20) (fps 30)
   in
-    Signal.sampleOn delta (Signal.map2 (,) delta Keyboard.arrows)
+    Signal.sampleOn delta (Signal.map3 (,,) delta Keyboard.arrows Touch.touches)
