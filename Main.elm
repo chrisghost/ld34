@@ -25,14 +25,28 @@ type GameState = Game | Dead
 
 type alias Model =
   {
+    defaultWalls : List Wall,
     walls : List Wall,
     ship: Ship,
     state: GameState
   }
 
+(gameWidth, gameHeight) = (600,1000)
+
+startWalls : List Wall
+startWalls = [
+               {x= -200, y= 100, w= 400, h= 20 }
+             , {x= 200, y= 300, w= 400, h= 20 }
+             ]
+
+defaultWalls : List Wall
+defaultWalls = [
+                 {x= 300, y= 0, w= 30, h= gameHeight }
+               , {x= -300, y= 0, w= 30, h= gameHeight }
+               ]
 
 defaultModel : Model
-defaultModel = Model [ {x= -100, y=100, w= 500, h= 20 } ] {x=0, y=0, vx=0, vy=0, a=0, size=10} Game
+defaultModel = Model defaultWalls startWalls {x=0, y=0, vx=0, vy=0, a=0, size=10} Game
 --model = Model [ Wall { -100 100 500 20} ] {x=0, y=0, vx=0, vy=0, a=0}
 
 type alias Keys = { x: Int, y: Int }
@@ -56,7 +70,10 @@ update (dt, keys) model =
 
         walls' = List.map (physics 0 -model.ship.vy dt) model.walls
 
-        state' = if (List.any identity (List.map (collision ship') walls')) then
+        state' = if (List.any identity (
+                        (List.map (collision ship') walls') ++
+                        List.map (collision ship') model.defaultWalls
+                      )) then
                    Dead
                  else
                    model.state
@@ -110,6 +127,8 @@ getClosest ship wall =
   else if ship.y < wall.y+wall.h/2 && ship.y > wall.y-wall.h/2 then -- MIDDLE
     if ship.x < wall.x-wall.w/2 then -- middle-left
        (wall.x - wall.w/2, ship.y)
+    else if ship.x < wall.x+wall.w/2 && ship.x > wall.x-wall.w/2 then -- middle-middle
+       (ship.x, ship.y)
     else -- middle-right
        (wall.x + wall.w/2, ship.y)
   else -- BOTTOM
@@ -123,14 +142,14 @@ getClosest ship wall =
 
 -- VIEW
 
-drawWall : Wall -> Form
-drawWall wall = rect wall.w wall.h
-                  |> filled (rgb 0 0 0)
-                  |> move (wall.x, wall.y)
+drawWall : (Float, Float) -> Wall -> Form
+drawWall (xr, yr) wall = rect (wall.w * xr) (wall.h * yr)
+                            |> filled (rgb 0 0 0)
+                            |> move (wall.x * xr, wall.y * yr)
 
-drawShip : Ship -> Form
-drawShip ship = group [
-                  circle ship.size
+drawShip : (Float, Float) -> Ship -> Form
+drawShip (xr, yr) ship = group [
+                  circle (ship.size * (xr+yr)/2)
                     |> filled (rgb 255 0 0)
                   ,
                   rect 10 50
@@ -138,26 +157,30 @@ drawShip ship = group [
                     |> move (0, -20)
                 ]
                   |> rotate ship.a
-                  |> move (ship.x, ship.y)
+                  |> move (ship.x * xr, ship.y * yr)
 
 view : (Int, Int) -> Model -> Element
 view (w',h') model =
   let
     (w,h) = (toFloat w', toFloat h')
+
+    (xRatio, yRatio) = ((w/gameWidth), (h/gameHeight))
   in
     collage w' h'
       ([ rect w h
           |> filled (rgb 174 238 238),
-        drawShip model.ship,
+        drawShip (xRatio, yRatio) model.ship,
         toForm (show (getvecship model.ship))
           |> move (-100, -100),
         toForm (show model.ship.a)
           |> move (-100, -150)
-      ] ++ (List.map drawWall model.walls) ++
-        case model.state of
-          Dead -> [toForm (show "YOU DEAD!")
-                    |> move (100, 50) ]
-          _ -> []
+      ] ++
+      (List.map (drawWall (xRatio, yRatio)) model.walls) ++
+      (List.map (drawWall (xRatio, yRatio)) model.defaultWalls) ++
+      case model.state of
+        Dead -> [toForm (show "YOU DEAD!")
+                  |> move (100, 50) ]
+        _ -> []
     )
 
 
