@@ -7,6 +7,7 @@ import Window
 import Debug exposing (..)
 import Touch
 
+import Levels
 
 -- MODEL
 
@@ -18,6 +19,7 @@ type alias Ship =
   , vy : Float
   , a : Float
   , size: Float
+  , sizeRatio: Float
   }
 
 type alias Wall = Positioned { w: Float, h: Float }
@@ -26,7 +28,8 @@ type alias Fire = Positioned { size: Float }
 
 type alias Smoke = Positioned { vx: Float, vy: Float, age: Int, size: Float }
 
-type GameState = Game | Dead
+type DeathCause = Fall | Burn
+type GameState = Game | Dead DeathCause
 
 type alias Model =
   {
@@ -57,15 +60,10 @@ defaultWalls = [
 defaultModel : Model
 defaultModel = Model
                   defaultWalls
-                  startWalls
-                  [
-
-
-  {x= -236, y= 0, size= 32},{x= -172, y= 0, size= 32},{x= -108, y= 0, size= 32},{x= -44, y= 0, size= 32},{x= 84, y= 0, size= 32},{x= 148, y= 0, size= 32},{x= 212, y= 0, size= 32},{x= 276, y= 0, size= 32},{x= -236, y= 64, size= 32},{x= -172, y= 64, size= 32},{x= -108, y= 64, size= 32},{x= -44, y= 64, size= 32},{x= 84, y= 64, size= 32},{x= 148, y= 64, size= 32},{x= 212, y= 64, size= 32},{x= 276, y= 64, size= 32},{x= -236, y= 128, size= 32},{x= -236, y= 256, size= 32},{x= -172, y= 256, size= 32},{x= -108, y= 256, size= 32},{x= 84, y= 256, size= 32}
-
-
-                    ]
-                  {x= 0, y= -300, vx=0, vy=0, a=0, size= 28}
+                  --startWalls
+                  Levels.level1_walls
+                  Levels.level1_fires
+                  {x= 0, y= -300, vx=0, vy=0, a=0, size= 28, sizeRatio= 1}
                   Game
                   []
                   0
@@ -152,9 +150,10 @@ update (dt, keys, ltch) model =
                         (List.map (collision ship') walls') ++ [ship'.x < -gameWidth/2, ship'.x > gameWidth/2]
                         --List.map (collision ship') model.defaultWalls
                       ))
-                      || List.any identity (List.map (collisionCircle ship') model.fires)
                       then
-                   Dead
+                     Dead Fall
+                   else if List.any identity (List.map (collisionCircle ship') model.fires) then
+                     Dead Burn
                  else
                    model.state
       in
@@ -166,8 +165,15 @@ update (dt, keys, ltch) model =
           smokes = smokes',
           t = model.t + round dt
         }
-    Dead ->
-      model
+    Dead Fall ->
+      let
+          --_ = log "shrinking!" "dd"
+          ship = (model.ship)
+          ship' = { ship | sizeRatio = ship.sizeRatio * 0.95 }
+      in
+        { model | ship = ship' }
+    Dead Burn -> model
+
 
 findAdjacent : List Fire -> Fire -> Fire
 findAdjacent lst fire = if (not (List.any (\f -> f.x == fire.x - 64 && f.y == fire.y) lst ) ) then
@@ -268,7 +274,7 @@ drawWall (xr, yr) wall = rect (wall.w * xr) (wall.h * yr)
 drawShip : (Float, Float) -> Ship -> Form
 drawShip (xr, yr) ship = group [
                       --circle (ship.size * (xr+yr)/2) |> filled (rgb 255 0 0) ,
-                    image (round (60*xr)) (round (100*yr)) "img/player.png"
+                    image (round ((60*xr) * ship.sizeRatio)) (round ((100*yr) * ship.sizeRatio)) "img/player.png"
                       |> toForm
                       |> move (0, -10)
 --                  rect 10 50
@@ -287,8 +293,7 @@ view (w',h') model =
   in
     collage w' h'
       ([ rect w h
-          |> filled (rgb 174 238 238),
-        drawShip (xRatio, yRatio) model.ship
+          |> filled (rgb 174 238 238)
         --toForm (show (getvecship model.ship))
           --|> move (-100, -100),
         --toForm (show model.ship.a)
@@ -298,9 +303,12 @@ view (w',h') model =
       (List.map (drawWall (xRatio, yRatio)) model.defaultWalls) ++
       (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
       (List.map (drawFire (xRatio, yRatio)) model.fires) ++
+      [drawShip (xRatio, yRatio) model.ship] ++
       case model.state of
-        Dead -> [toForm (show "YOU DEAD!")
-                  |> move (100, 50) ]
+        Dead Fall -> [toForm (show "YOU FELL!")
+                        |> move (100, -250) ]
+        Dead Burn -> [toForm (show "YOU BURNED!")
+                        |> move (100, -250) ]
         _ -> []
     )
 
