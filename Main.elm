@@ -31,7 +31,7 @@ type alias Goal = Positioned { size: Float }
 
 type alias Extinguisher = Positioned { size: Float }
 
-type alias Fire = Positioned { size: Float, halo: Float }
+type alias Fire = Positioned { size: Float, halo: Float, sprite: Int }
 
 type alias Smoke = Positioned { vx: Float, vy: Float, age: Float, size: Float }
 
@@ -81,7 +81,7 @@ defaultWalls = []
 
 defaultBoost = 40
 
-startLevel = 4
+startLevel = 1
 
 defaultModel : Model
 defaultModel = Model
@@ -274,21 +274,18 @@ update (dt, keys, ltch) model =
         smokes' = updateSmokes model dt False
 
         button3Pressed = keys.x ==  1 --|| List.any (\t -> t.x > 0) ltch
-        state' = if button3Pressed then Game else model.state
+        button4Pressed = keys.y ==  -1 --|| List.any (\t -> t.x > 0) ltch
 
-        ship'' = if button3Pressed then defaultModel.ship
+        state' = if button3Pressed || button4Pressed then Game else model.state
+
+        ship'' = if button3Pressed || button4Pressed then defaultModel.ship
                                       else ship'
 
         model' = if button3Pressed then
-                    let
-                        newL = case model.state of
-                          Won -> model.level + 1
-                          _ -> model.level
-
-                        m = (loadLevel newL model)
-                    in
-                       { m | t = 0 }
-                    else model
+                        (loadLevel (model.level + 1) model)
+                 else if button4Pressed then
+                        (loadLevel model.level model)
+                 else model
       in
         { model' | ship = ship'', smokes = smokes', state = state' }
 
@@ -400,7 +397,7 @@ drawExtinguisher (xr, yr) ext = group [
 
 drawFire (xr, yr) fire = group [
                       --circle (fire.size * (xr+yr)/2) |> filled (rgb 255 0 0) |> move (fire.x * xr, fire.y * yr) ,
-                          image (round (64*xr)) (round (64*yr)) "img/fire.png"
+                          image (round (64*xr)) (round (64*yr)) ("img/fire"++(toString fire.sprite)++".png")
                             |> toForm
                             |> move (fire.x * xr, fire.y * yr)
                       ]
@@ -471,11 +468,11 @@ view (w',h') model =
                   |> leftAligned
                   |> toForm
                   |> move (0, 250),
-                Text.style { style | color = black } (Text.fromString "Controls\nLeft - Rotate\nUp - Thrust")
-                  |> centered
+                Text.style { style | color = black } (Text.fromString "Controls\n[LEFT] Rotate\n[UP] Thrust")
+                  |> leftAligned
                   |> toForm
                   |> move (0, 50),
-                Text.style { style | color = blue } (Text.fromString "Press Right to start")
+                Text.style { style | color = blue } (Text.fromString "Press [RIGHT] to start")
                   |> centered
                   |> toForm
                   |> move (0, -250)
@@ -521,7 +518,7 @@ view (w',h') model =
               [ rect w (h/10)
                   |> filled ( rgba 0 0 0 0.7)
                   |> move (0, (h/2) - h/20)
-              , Text.style { style | height = Just 32 } (Text.fromString "Extinguisher tank")
+              , Text.style { style | color = white, height = Just 32 } (Text.fromString ("Level "++(toString model.level)))
                   |> leftAligned
                   |> toForm
                   |> move (-w/3, tankY)
@@ -538,24 +535,6 @@ view (w',h') model =
                                 rect w h
                                   |> filled (rgb 0 0 0)
                                   |> alpha 0.3
-                              ] ++ (case cause of
-                                Burn -> [
-                                  Text.style style (Text.fromString "YOU BURNED")
-                                    |> leftAligned
-                                    |> toForm
-                                    |> move (0, 250)
-                                  , drawFire (xRatio, yRatio) model.ship ]
-                                Empty -> [
-                                  Text.style style (Text.fromString "NO MORE FUEL")
-                                    |> leftAligned
-                                    |> toForm
-                                    |> move (0, 250)]
-                                Fall -> [
-                                  Text.style style (Text.fromString "YOU FELL")
-                                    |> leftAligned
-                                    |> toForm
-                                    |> move (0, 250)
-                                  ]) ++ [
                                   ]
                 Won -> [
                   Text.style { style | color = green } (Text.fromString "YOU WON")
@@ -566,25 +545,56 @@ view (w',h') model =
                     |> leftAligned
                     |> toForm
                     |> move (0, 150)
-                , drawShip (xRatio, yRatio) model.ship
-                , rect w h
+                , drawShip (xRatio, yRatio) model.ship ] ++
+                [ rect w h
                   |> filled (rgb 0 0 0)
                   |> alpha 0.3
                 ]
                 _ -> [drawShip (xRatio, yRatio) model.ship]
-              )
+              ) ++
+                (case model.state of
+                  Game -> []
+                  Menu -> []
+                  _ -> [
+                      Text.style {style | color = white } (Text.fromString "Press [DOWN] to retry\n\nPress [RIGHT] for next level")
+                        |> centered
+                        |> toForm
+                        |> move (0, 0)
+                      ]
+                )
+              ++ (case model.state of
+                    Dead Burn -> [
+                      Text.style style (Text.fromString "YOU BURNED")
+                        |> leftAligned
+                        |> toForm
+                        |> move (0, 250)
+                      , drawFire (xRatio, yRatio) 
+                           { x= model.ship.x, y = model.ship.y, size = model.ship.size, sprite =1, halo = 0}
+                            ]
+                    Dead Empty -> [
+                      Text.style style (Text.fromString "NO MORE FUEL")
+                        |> leftAligned
+                        |> toForm
+                        |> move (0, 250)]
+                    Dead Fall -> [
+                      Text.style style (Text.fromString "YOU FELL")
+                        |> leftAligned
+                        |> toForm
+                        |> move (0, 250)
+                      ]
+                    _ -> [])
             )
         ) ++ [
-                Text.style { typeface = [ "Times New Roman", "serif" ]
-                        , height   = Just 32
-                        , color    = white
-                        , bold     = True
-                        , italic   = False
-                        , line     = Nothing
-                      } (Text.fromString ("FPS : " ++ (toString model.fps)))
-                    |> leftAligned
-                    |> toForm
-                    |> move (-w/2 + 130, h/2 - 30)
+--                Text.style { typeface = [ "Times New Roman", "serif" ]
+--                        , height   = Just 32
+--                        , color    = white
+--                        , bold     = True
+--                        , italic   = False
+--                        , line     = Nothing
+--                      } (Text.fromString ("FPS : " ++ (toString model.fps)))
+--                    |> leftAligned
+--                    |> toForm
+--                    |> move (-w/2 + 130, h/2 - 30)
                   ])
 
 -- SIGNALS

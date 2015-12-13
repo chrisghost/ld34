@@ -31,7 +31,7 @@ object LevelMaker extends App {
 
 
     val fires = iterate(lines, { (c, xx, yy) =>  (c, xx, yy) match {
-      case ('F', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 32, halo= 1 }")
+      case ('F', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 32, halo= 1 , sprite= ${(new scala.util.Random()).nextInt(3) + 1}}") 
       case _ => None
     }}).mkString(",")
 
