@@ -2,11 +2,13 @@ import play.api.libs.json._
 
 object LevelMaker extends App {
   override def main(args: Array[String]) = {
-    println(args.head)
+    makeFile(args.toList.map(f => parseFile(f)))
+  }
+  def parseFile(f: String) = {
     val FACTOR = 64
     val startx = -300 - FACTOR / 2
     val starty = -500
-    val lines  = scala.io.Source.fromFile(args.head)
+    val lines  = scala.io.Source.fromFile(f)
         .getLines
         .toSeq
         .zipWithIndex
@@ -35,17 +37,17 @@ object LevelMaker extends App {
             case _ => "lrtb"
           }
            Some(s"""
-  { x= ${startx+x*FACTOR},
-  y= ${starty+y*FACTOR},
-  w = $FACTOR,
-  h = $FACTOR,
-  orientation = "$orientation"} """)
+    { x= ${startx+x*FACTOR},
+    y= ${starty+y*FACTOR},
+    w = $FACTOR,
+    h = $FACTOR,
+    orientation = "$orientation"} """)
         }
       case _ => None
     }}).mkString(",")
 
 
-    makeFile(fires, walls, goal)
+    (fires, walls, goal)
   }
 
   def iterate(lst: Seq[(String, Int)], f: (Char, Int, Int) => Option[String]) ={
@@ -56,20 +58,29 @@ object LevelMaker extends App {
       }.toList.flatten
   }
 
-  def makeFile(fires: String, walls: String, goal: String) = {
+  def makeFile(l: List[(String, String, String)]) = {
     val content = s"""module Levels
      ( getWalls, getFires, getGoal) where
 
 --level1 : {a | fires : List {b | x: Float, y: Float, size: Float}, walls: List {c | x: Float, y: Float, size: Float} }
 getWalls l = case l of
-  1 -> [$walls]
+  ${l.zipWithIndex.map {
+      case ((fires, walls, goal), lvl) => (lvl+1)+" -> ["+walls+"]\n  "
+    }.mkString
+  }
   _ -> []
 getFires l = case l of
-  1 -> [$fires]
+  ${l.zipWithIndex.map {
+      case ((fires, walls, goal), lvl) => (lvl+1)+" -> ["+fires+"]\n  "
+    }.mkString
+  }
   _ -> []
 getGoal l = case l of
-  1 -> $goal
-  _ -> $goal
+  ${l.zipWithIndex.map {
+      case ((fires, walls, goal), lvl) => (lvl+1)+" -> "+goal+"\n  "
+    }.mkString
+  }
+  _ -> getGoal 1
     """
 
     val writer = new java.io.PrintWriter(new java.io.File("../Levels.elm"))

@@ -21,6 +21,7 @@ type alias Ship =
   , a : Float
   , size: Float
   , sizeRatio: Float
+  , fuel: Int
   }
 
 type alias Wall = Positioned { w: Float, h: Float, orientation: String }
@@ -44,7 +45,8 @@ type alias Model =
     ship: Ship,
     state: GameState,
     smokes: List Smoke,
-    t: Int
+    t: Int,
+    level: Int
   }
 
 (gameWidth, gameHeight) = (640,1000)
@@ -78,17 +80,19 @@ defaultModel = Model
                   (Levels.getWalls 1)
                   (Levels.getGoal 1)
                   (Levels.getFires 1)
-                  {x= 0, y= -300, vx=0, vy=0, a=0, size= 28, sizeRatio= 1}
+                  {x= 0, y= -300, vx=0, vy=0, a=0, size= 28, sizeRatio= 1, fuel= 500}
                   Menu
                   []
                   0
+                  1
+
 --model = Model [ Wall { -100 100 500 20} ] {x=0, y=0, vx=0, vy=0, a=0}
 
-loadLevel1: Model -> Model
-loadLevel1 model = { model |
-                     fires = Levels.getFires 1
-                   , walls = Levels.getWalls 1
-                   , goal = Levels.getGoal 1
+loadLevel : Int -> Model -> Model
+loadLevel l model = { model |
+                     fires = Levels.getFires l
+                   , walls = Levels.getWalls l
+                   , goal = Levels.getGoal l
                  }
 
 type alias Keys = { x: Int, y: Int }
@@ -164,7 +168,7 @@ update (dt, keys, ltch) model =
           |> physics model.ship.vx 0 dt
           |> friction dt
 
-        smokes' = updateSmokes model dt button2Pressed
+        smokes' = updateSmokes model dt (button2Pressed && ship'.fuel > 0)
 
         walls' = List.map (physics 0 -model.ship.vy dt) model.walls
 
@@ -245,7 +249,10 @@ update (dt, keys, ltch) model =
                                       else ship'
 
         model' = if button3Pressed then
-                    loadLevel1 model
+                    let
+                        m = (loadLevel (model.level + 1) model)
+                    in
+                       { m | t = 0 }
                     else model
       in
         { model' | ship = ship'', smokes = smokes', state = state' }
@@ -271,15 +278,17 @@ rotateShip x dt ship = if x then
                           ship
 
 thrust : Bool -> Float -> Ship -> Ship
-thrust y dt ship = if y then
+thrust y dt ship = if y && ship.fuel > 0 then
                      let
                        (xt', yt') = (getvecship ship)
                        (xt, yt) = (xt' * 0.3, yt' * 0.3)
+                       --_ = log "fuel : " ship.fuel
                      in
                        {
                          ship |
                                 vx = ship.vx + xt,
-                                vy = ship.vy + yt
+                                vy = ship.vy + yt,
+                                fuel = (ship.fuel - round dt)
                        }
                    else
                      ship
@@ -429,10 +438,15 @@ view (w',h') model =
                style = { typeface = [ "Times New Roman", "serif" ]
                             , height   = Just 64
                             , color    = red
-                            , bold     = False
+                            , bold     = True
                             , italic   = False
                             , line     = Nothing
                             }
+               tankMaxW = (w/3)
+               tankW = tankMaxW * (toFloat model.ship.fuel / toFloat defaultModel.ship.fuel)
+               tankX = (tankMaxW - tankW) / 2
+               tankY = h/2 - h/20
+               tankH = h/40
            in
               ([ rect w h
                   |> filled (rgb 205 205 205)
@@ -454,9 +468,26 @@ view (w',h') model =
               (List.map (drawFireHalo (xRatio, yRatio) model.t) model.fires) ++
               (List.map (drawFire (xRatio, yRatio)) model.fires) ++
               [drawGoal (xRatio, yRatio) model.goal] ++
+              [ rect w (h/10)
+                  |> filled ( rgba 0 0 0 0.7)
+                  |> move (0, (h/2) - h/20)
+              , Text.style { style | height = Just 32 } (Text.fromString "Extinguisher tank")
+                  |> leftAligned
+                  |> toForm
+                  |> move (-w/3, tankY)
+              , rect tankMaxW tankH
+                  |> filled ( rgb 255 0 0)
+                  |> move (0, tankY)
+              , rect tankW tankH
+                  |> filled ( rgb 0 255 0)
+                  |> move (-tankX , tankY)
+                ] ++
               (case model.state of
                 Dead cause -> [
-                               drawShip (xRatio, yRatio) model.ship
+                               drawShip (xRatio, yRatio) model.ship,
+                                rect w h
+                                  |> filled (rgb 0 0 0)
+                                  |> alpha 0.3
                               ] ++ (case cause of
                                 Burn -> [
 
@@ -471,14 +502,16 @@ view (w',h') model =
                                     |> toForm
                                     |> move (0, 250)
                                   ]) ++ [
-                                rect w h
-                                  |> filled (rgb 0 0 0)
-                                  |> alpha 0.3]
+                                  ]
                 Won -> [
                   Text.style { style | color = green } (Text.fromString "YOU WON")
                     |> leftAligned
                     |> toForm
                     |> move (0, 250)
+                , Text.style style (Text.fromString ("TIME : " ++ toString model.t))
+                    |> leftAligned
+                    |> toForm
+                    |> move (0, 150)
                 , drawShip (xRatio, yRatio) model.ship
                 , rect w h
                   |> filled (rgb 0 0 0)
