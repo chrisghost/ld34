@@ -22,11 +22,14 @@ type alias Ship =
   , size: Float
   , sizeRatio: Float
   , fuel: Int
+  , boost: Float
   }
 
 type alias Wall = Positioned { w: Float, h: Float, orientation: String }
 
 type alias Goal = Positioned { size: Float }
+
+type alias Extinguisher = Positioned { size: Float }
 
 type alias Fire = Positioned { size: Float, halo: Float }
 
@@ -42,6 +45,8 @@ type alias Model =
     walls : List Wall,
     goal : Goal,
     fires : List Fire,
+    extinguishers : List Extinguisher,
+    boosts : List Extinguisher,
     ship: Ship,
     state: GameState,
     smokes: List Smoke,
@@ -74,14 +79,20 @@ defaultWalls = []
 --               , {x= -300, y= 0, w= 30, h= gameHeight , orientation= "lrtb"}
 --               ]
 
+defaultBoost = 40
+
+startLevel = 4
+
 defaultModel : Model
 defaultModel = Model
                   defaultWalls
                   --startWalls
-                  (Levels.getWalls 1)
-                  (Levels.getGoal 1)
-                  (Levels.getFires 1)
-                  {x= 0, y= -300, vx=0, vy=0, a=0, size= 28, sizeRatio= 1, fuel= 500}
+                  (Levels.getWalls startLevel)
+                  (Levels.getGoal startLevel)
+                  (Levels.getFires startLevel)
+                  (Levels.getBonuses startLevel)
+                  (Levels.getBoosts startLevel)
+                  {x= 0, y= -300, vx=0, vy=0, a=0, size= 28, sizeRatio= 1, fuel= 500, boost= 0}
                   Menu
                   []
                   0
@@ -95,6 +106,8 @@ loadLevel l model = { model |
                      fires = Levels.getFires l
                    , walls = Levels.getWalls l
                    , goal = Levels.getGoal l
+                   , boosts = Levels.getBoosts l
+                   , extinguishers = Levels.getBonuses l
                    , level = l
                  }
 
@@ -166,13 +179,28 @@ update (dt, keys, ltch) model =
         button1Pressed = keys.x == -1 || List.any (\t -> t.x < 0) ltch
         button2Pressed = keys.y ==  1 || List.any (\t -> t.x > 0) ltch
 
+        extinguishers' = List.map (physics 0 -model.ship.vy dt) model.extinguishers
+                          |> List.filter (\e -> not (collisionCircle e model.ship))
+
+        boosts' = List.map (physics 0 -model.ship.vy dt) model.boosts
+                          |> List.filter (\e -> not (collisionCircle e model.ship))
+
+
         ship' = model.ship
           |> rotateShip button1Pressed dt
           |> thrust button2Pressed dt
           |> physics model.ship.vx 0 dt
           |> friction dt
+          |> (\e -> if (List.length extinguishers') < (List.length model.extinguishers) then
+                       {e | fuel = defaultModel.ship.fuel }
+                       else e
+                     )
+          |> (\e -> if (List.length boosts') < (List.length model.boosts) then
+                       {e | boost = defaultBoost }
+                       else e
+                     )
 
-        smokes' = updateSmokes model dt (button2Pressed && ship'.fuel > 0)
+        smokes' = updateSmokes model dt ((button2Pressed && ship'.fuel > 0) || ship'.boost > 0)
 
         walls' = List.map (physics 0 -model.ship.vy dt) model.walls
 
@@ -227,6 +255,8 @@ update (dt, keys, ltch) model =
           fires = fires',
           ship = ship',
           state = state',
+          extinguishers = extinguishers',
+          boosts = boosts',
           smokes = smokes',
           goal = goal',
           t = model.t + round dt,
@@ -283,17 +313,22 @@ rotateShip x dt ship = if x then
                           ship
 
 thrust : Bool -> Float -> Ship -> Ship
-thrust y dt ship = if y && ship.fuel > 0 then
+thrust y dt ship = if (y && ship.fuel > 0) || ship.boost > 0 then
                      let
                        (xt', yt') = (getvecship ship)
-                       (xt, yt) = (xt' * 0.3 * dt, yt' * 0.3 * dt)
+                       (xt, yt) = if ship.boost <= 0 then (xt' * 0.3 * dt, yt' * 0.3 * dt)
+                                  else (xt' * dt, yt' * dt)
                        --_ = log "fuel : " ship.fuel
                      in
                        {
                          ship |
                                 vx = ship.vx + xt,
                                 vy = ship.vy + yt,
-                                fuel = (ship.fuel - round dt)
+                                fuel = if ship.boost <= 0 then (ship.fuel - round dt)
+                                          else ship.fuel
+                               ,
+                                boost = if ship.boost >= 0 then ship.boost - dt
+                                          else ship.boost
                        }
                    else
                      ship
@@ -354,6 +389,14 @@ drawGoal : (Float, Float) -> Goal -> Form
 drawGoal (xr, yr) goal = circle goal.size
                             |> filled (rgb 0 200 0)
                             |> move (goal.x * xr, goal.y * yr)
+
+drawExtinguisher (xr, yr) ext = group [
+                      --circle (fire.size * (xr+yr)/2) |> filled (rgb 255 0 0) |> move (fire.x * xr, fire.y * yr) ,
+                          image (round (64*xr)) (round (64*yr)) "img/extinguisher.png"
+                            |> toForm
+                            |> move (ext.x * xr, ext.y * yr)
+                      ]
+
 
 drawFire (xr, yr) fire = group [
                       --circle (fire.size * (xr+yr)/2) |> filled (rgb 255 0 0) |> move (fire.x * xr, fire.y * yr) ,
@@ -472,6 +515,8 @@ view (w',h') model =
               (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
               --(List.map (drawFireHalo (xRatio, yRatio) model.t) model.fires) ++
               (List.map (drawFire (xRatio, yRatio)) model.fires) ++
+              (List.map (drawExtinguisher (xRatio, yRatio)) model.extinguishers) ++
+              (List.map (drawExtinguisher (xRatio, yRatio)) model.boosts) ++
               [drawGoal (xRatio, yRatio) model.goal] ++
               [ rect w (h/10)
                   |> filled ( rgba 0 0 0 0.7)
