@@ -30,9 +30,9 @@ type alias Goal = Positioned { size: Float }
 
 type alias Fire = Positioned { size: Float, halo: Float }
 
-type alias Smoke = Positioned { vx: Float, vy: Float, age: Int, size: Float }
+type alias Smoke = Positioned { vx: Float, vy: Float, age: Float, size: Float }
 
-type DeathCause = Fall | Burn
+type DeathCause = Fall | Burn | Empty
 type GameState = Menu | Game | Won | Dead DeathCause
 
 
@@ -46,7 +46,8 @@ type alias Model =
     state: GameState,
     smokes: List Smoke,
     t: Int,
-    level: Int
+    level: Int,
+    fps: Float
   }
 
 (gameWidth, gameHeight) = (640,1000)
@@ -85,6 +86,7 @@ defaultModel = Model
                   []
                   0
                   1
+                  0
 
 --model = Model [ Wall { -100 100 500 20} ] {x=0, y=0, vx=0, vy=0, a=0}
 
@@ -93,6 +95,7 @@ loadLevel l model = { model |
                      fires = Levels.getFires l
                    , walls = Levels.getWalls l
                    , goal = Levels.getGoal l
+                   , level = l
                  }
 
 type alias Keys = { x: Int, y: Int }
@@ -117,8 +120,9 @@ rotateVec x y a = (
 updateSmokes model dt button2Pressed = List.map
                     (\s -> let
                                s' = physics s.vx s.vy dt s
+                               _ = log "dt = " dt
                            in
-                              { s' | age = s'.age - 1 }
+                              { s' | age = s'.age - dt }
                     )
                     (List.filter
                       (\s -> s.age > 0 && s.x > -gameWidth/2 && s.x < gameWidth/2)
@@ -141,7 +145,7 @@ updateSmokes model dt button2Pressed = List.map
                             , y=model.ship.y
                             , vx= (nvx)*10
                             , vy= (nvy)*10
-                            , age= randomInt model.t 3 10
+                            , age= toFloat (randomInt model.t 3 20)
                             , size= (toFloat 10) } ]
                         else []
                     ))
@@ -213,6 +217,8 @@ update (dt, keys, ltch) model =
                      Dead Burn
                    else if (collisionCircle ship' model.goal) then
                      Won
+                   else if (model.ship.fuel < 1 && (model.ship.vx + model.ship.vy) < 2) then
+                     Dead Empty
                  else
                    model.state
       in
@@ -223,7 +229,8 @@ update (dt, keys, ltch) model =
           state = state',
           smokes = smokes',
           goal = goal',
-          t = model.t + round dt
+          t = model.t + round dt,
+          fps = 1000 / (20 * dt)
         }
     state ->
       let
@@ -239,18 +246,16 @@ update (dt, keys, ltch) model =
         button3Pressed = keys.x ==  1 --|| List.any (\t -> t.x > 0) ltch
         state' = if button3Pressed then Game else model.state
 
-        ship'' = if button3Pressed then { ship' |
-                                          x = defaultModel.ship.x
-                                        , y = defaultModel.ship.y
-                                        , vx = 0
-                                        , vy = 0
-                                        , sizeRatio = 1
-                                      }
+        ship'' = if button3Pressed then defaultModel.ship
                                       else ship'
 
         model' = if button3Pressed then
                     let
-                        m = (loadLevel (model.level + 1) model)
+                        newL = case model.state of
+                          Won -> model.level + 1
+                          _ -> model.level
+
+                        m = (loadLevel newL model)
                     in
                        { m | t = 0 }
                     else model
@@ -281,7 +286,7 @@ thrust : Bool -> Float -> Ship -> Ship
 thrust y dt ship = if y && ship.fuel > 0 then
                      let
                        (xt', yt') = (getvecship ship)
-                       (xt, yt) = (xt' * 0.3, yt' * 0.3)
+                       (xt, yt) = (xt' * 0.3 * dt, yt' * 0.3 * dt)
                        --_ = log "fuel : " ship.fuel
                      in
                        {
@@ -296,7 +301,7 @@ thrust y dt ship = if y && ship.fuel > 0 then
 --physics : Float -> Float -> Float -> Positioned {} -> Positioned {}
 physics vx vy dt obj = { obj | x = obj.x + dt * vx, y = obj.y + dt * vy }
 
-friction dt obj = { obj | vx = obj.vx * (1 - (0.1 / dt)) , vy = obj.vy * (1 - (0.1 / dt)) }
+friction dt obj = { obj | vx = obj.vx * (1 - (0.05 * dt)) , vy = obj.vy * (1 - (0.05 * dt)) }
 
 collisionCircle a b = let
                           dst = (dist (a.x, a.y) (b.x, b.y))
@@ -406,7 +411,7 @@ view (w',h') model =
     (xRatio, yRatio) = (1, 1) -- ((w/gameWidth), (h/gameHeight))
   in
      collage w' h'
-       (case model.state of
+       ((case model.state of
          Menu -> 
            let
                style = { typeface = [ "Times New Roman", "serif" ]
@@ -417,7 +422,7 @@ view (w',h') model =
                             , line     = Nothing
                             }
            in
-             ([ rect w h
+             [ rect w h
                 |> filled (rgb 205 205 205),
                 Text.style style (Text.fromString "Office Fireman")
                   |> leftAligned
@@ -431,7 +436,7 @@ view (w',h') model =
                   |> centered
                   |> toForm
                   |> move (0, -250)
-             ])
+             ]
 
          _ ->
            let
@@ -465,7 +470,7 @@ view (w',h') model =
               (List.map (drawWall (xRatio, yRatio)) model.walls) ++
               (List.map (drawWall (xRatio, yRatio)) model.defaultWalls) ++
               (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
-              (List.map (drawFireHalo (xRatio, yRatio) model.t) model.fires) ++
+              --(List.map (drawFireHalo (xRatio, yRatio) model.t) model.fires) ++
               (List.map (drawFire (xRatio, yRatio)) model.fires) ++
               [drawGoal (xRatio, yRatio) model.goal] ++
               [ rect w (h/10)
@@ -490,12 +495,16 @@ view (w',h') model =
                                   |> alpha 0.3
                               ] ++ (case cause of
                                 Burn -> [
-
                                   Text.style style (Text.fromString "YOU BURNED")
                                     |> leftAligned
                                     |> toForm
                                     |> move (0, 250)
                                   , drawFire (xRatio, yRatio) model.ship ]
+                                Empty -> [
+                                  Text.style style (Text.fromString "NO MORE FUEL")
+                                    |> leftAligned
+                                    |> toForm
+                                    |> move (0, 250)]
                                 Fall -> [
                                   Text.style style (Text.fromString "YOU FELL")
                                     |> leftAligned
@@ -520,7 +529,18 @@ view (w',h') model =
                 _ -> [drawShip (xRatio, yRatio) model.ship]
               )
             )
-        )
+        ) ++ [
+                Text.style { typeface = [ "Times New Roman", "serif" ]
+                        , height   = Just 32
+                        , color    = white
+                        , bold     = True
+                        , italic   = False
+                        , line     = Nothing
+                      } (Text.fromString ("FPS : " ++ (toString model.fps)))
+                    |> leftAligned
+                    |> toForm
+                    |> move (-w/2 + 130, h/2 - 30)
+                  ])
 
 -- SIGNALS
 
@@ -532,7 +552,7 @@ main =
 input : Signal (Float, Keys, List Touch.Touch)
 input =
   let
-    delta = Signal.map (\t -> t/20) (fps 30)
+    delta = Signal.map (\t -> t/20) (fps 60)
   in
     Signal.sampleOn delta (Signal.map3 (,,) delta Keyboard.arrows Touch.touches)
 
