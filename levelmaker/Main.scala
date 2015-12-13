@@ -17,7 +17,7 @@ object LevelMaker extends App {
     }}).mkString(",")
 
     val fires = iterate(lines, { (c, xx, yy) =>  (c, xx, yy) match {
-      case ('F', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 32}")
+      case ('F', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 32, halo= 1 }")
       case _ => None
     }}).mkString(",")
 
@@ -58,12 +58,18 @@ object LevelMaker extends App {
 
   def makeFile(fires: String, walls: String, goal: String) = {
     val content = s"""module Levels
-     ( level1_walls, level1_fires, level1_goal) where
+     ( getWalls, getFires, getGoal) where
 
 --level1 : {a | fires : List {b | x: Float, y: Float, size: Float}, walls: List {c | x: Float, y: Float, size: Float} }
-level1_walls = [$walls]
-level1_fires = [$fires]
-level1_goal = $goal
+getWalls l = case l of
+  1 -> [$walls]
+  _ -> []
+getFires l = case l of
+  1 -> [$fires]
+  _ -> []
+getGoal l = case l of
+  1 -> $goal
+  _ -> $goal
     """
 
     val writer = new java.io.PrintWriter(new java.io.File("../Levels.elm"))

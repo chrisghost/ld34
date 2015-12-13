@@ -27,7 +27,7 @@ type alias Wall = Positioned { w: Float, h: Float, orientation: String }
 
 type alias Goal = Positioned { size: Float }
 
-type alias Fire = Positioned { size: Float }
+type alias Fire = Positioned { size: Float, halo: Float }
 
 type alias Smoke = Positioned { vx: Float, vy: Float, age: Int, size: Float }
 
@@ -75,9 +75,9 @@ defaultModel : Model
 defaultModel = Model
                   defaultWalls
                   --startWalls
-                  Levels.level1_walls
-                  Levels.level1_goal
-                  Levels.level1_fires
+                  (Levels.getWalls 1)
+                  (Levels.getGoal 1)
+                  (Levels.getFires 1)
                   {x= 0, y= -300, vx=0, vy=0, a=0, size= 28, sizeRatio= 1}
                   Menu
                   []
@@ -86,9 +86,9 @@ defaultModel = Model
 
 loadLevel1: Model -> Model
 loadLevel1 model = { model |
-                     fires = Levels.level1_fires
-                   , walls = Levels.level1_walls
-                   , goal = Levels.level1_goal
+                     fires = Levels.getFires 1
+                   , walls = Levels.getWalls 1
+                   , goal = Levels.getGoal 1
                  }
 
 type alias Keys = { x: Int, y: Int }
@@ -157,7 +157,7 @@ update (dt, keys, ltch) model =
         vec = getvecship model.ship
         button1Pressed = keys.x == -1 || List.any (\t -> t.x < 0) ltch
         button2Pressed = keys.y ==  1 || List.any (\t -> t.x > 0) ltch
-        --_ = log ">>" ltch
+
         ship' = model.ship
           |> rotateShip button1Pressed dt
           |> thrust button2Pressed dt
@@ -172,6 +172,25 @@ update (dt, keys, ltch) model =
 
         fires' = List.map (physics 0 -model.ship.vy dt) model.fires
                   |> List.filter (\f -> List.all (\x -> not x) (List.map (\s -> collisionCircle s f) smokes' ))
+                  |> List.map (\f -> 
+                                if (model.t%10) > 7 then
+                                   let
+                                     inc = (toFloat
+                                       (randomInt (
+                                         round (f.x + f.y + toFloat model.t)
+                                       ) 0 4)
+                                     ) / 10
+                                   in
+                                { f
+                                | halo =
+
+                                  if f.halo + inc > 1.5 then f.halo + inc - 0.7 else f.halo + inc
+
+                                  --max f.size ((f.size * 2) * (toFloat ( randomInt (round (f.x + f.y + toFloat model.t)) 0 10) / 10))
+                                }
+                                else
+                                f
+                )
         
 --        fires'' = if randomInt model.t 0 100 < 10 then
 --                     case (List.head (List.take (randomInt model.t 0 ((List.length fires') - 1)) fires')) of
@@ -232,17 +251,17 @@ update (dt, keys, ltch) model =
         { model' | ship = ship'', smokes = smokes', state = state' }
 
 
-findAdjacent : List Fire -> Fire -> Fire
-findAdjacent lst fire = if (not (List.any (\f -> f.x == fire.x - 64 && f.y == fire.y) lst ) ) then
-                           { x = fire.x - 64, y = fire.y, size= 32 }
-                        else if not (List.any (\f -> f.x == fire.x + 64 && f.y == fire.y) lst ) then
-                           { x = fire.x + 64, y = fire.y , size= 32 }
-                        else if not (List.any (\f -> f.x == fire.x && f.y == fire.y - 64) lst ) then
-                           { x = fire.x, y = fire.y - 64 , size= 32 }
-                        else if not (List.any (\f -> f.x == fire.x && f.y == fire.y + 64) lst ) then
-                           { x = fire.x, y = fire.y + 64 , size= 32 }
-                        else
-                           { x = fire.x, y = fire.y , size= 32 }
+--findAdjacent : List Fire -> Fire -> Fire
+--findAdjacent lst fire = if (not (List.any (\f -> f.x == fire.x - 64 && f.y == fire.y) lst ) ) then
+--                           { x = fire.x - 64, y = fire.y, size= 32 }
+--                        else if not (List.any (\f -> f.x == fire.x + 64 && f.y == fire.y) lst ) then
+--                           { x = fire.x + 64, y = fire.y , size= 32 }
+--                        else if not (List.any (\f -> f.x == fire.x && f.y == fire.y - 64) lst ) then
+--                           { x = fire.x, y = fire.y - 64 , size= 32 }
+--                        else if not (List.any (\f -> f.x == fire.x && f.y == fire.y + 64) lst ) then
+--                           { x = fire.x, y = fire.y + 64 , size= 32 }
+--                        else
+--                           { x = fire.x, y = fire.y , size= 32 }
 
 
 rotateShip : Bool -> Float -> Ship -> Ship
@@ -329,6 +348,26 @@ drawFire (xr, yr) fire = group [
                             |> move (fire.x * xr, fire.y * yr)
                       ]
 
+drawFireHalo (xr, yr) t fire = let
+                              sz = ((fire.size * (xr+yr)/2) * 2) * fire.halo
+
+                              grad1 = radial (0,0) 10 (0,10) sz
+                                  [ (  0, rgba  255 0 0 0.3)
+                                  , (0.5, rgba  228 199 0 0.1)
+                                  , (  1, rgba 0 0 0 0)
+                                  ]
+
+                             in
+                                 group [
+                      --circle (fire.size * (xr+yr)/2) |> filled (rgb 255 0 0) |> move (fire.x * xr, fire.y * yr) ,
+
+                      (gradient grad1 (circle sz))
+                          --circle ((fire.size * (xr+yr)/2) * 2)
+                            --|> filled (rgb 255 0 0)
+                            --|> alpha 0.3
+                            |> move (fire.x * xr, fire.y * yr)
+                      ]
+
 drawWall : (Float, Float) -> Wall -> Form
 drawWall (xr, yr) wall = 
   --rect (wall.w * xr) (wall.h * yr)
@@ -412,6 +451,7 @@ view (w',h') model =
               (List.map (drawWall (xRatio, yRatio)) model.walls) ++
               (List.map (drawWall (xRatio, yRatio)) model.defaultWalls) ++
               (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
+              (List.map (drawFireHalo (xRatio, yRatio) model.t) model.fires) ++
               (List.map (drawFire (xRatio, yRatio)) model.fires) ++
               [drawGoal (xRatio, yRatio) model.goal] ++
               (case model.state of
