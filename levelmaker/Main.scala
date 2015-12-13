@@ -18,6 +18,11 @@ object LevelMaker extends App {
       case _ => None
     }}).mkString(",")
 
+    val start = iterate(lines, { (c, xx, yy) =>  (c, xx, yy) match {
+      case ('S', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}}")
+      case _ => None
+    }}).mkString(",")
+
     val bonuses = iterate(lines, { (c, xx, yy) =>  (c, xx, yy) match {
       case ('E', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 32}")
       case _ => None
@@ -31,7 +36,7 @@ object LevelMaker extends App {
 
 
     val fires = iterate(lines, { (c, xx, yy) =>  (c, xx, yy) match {
-      case ('F', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 32, halo= 1 , sprite= ${(new scala.util.Random()).nextInt(3) + 1}}") 
+      case ('F', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 24, halo= 1 , sprite= ${(new scala.util.Random()).nextInt(3) + 1}}") 
       case _ => None
     }}).mkString(",")
 
@@ -60,7 +65,7 @@ object LevelMaker extends App {
     }}).mkString(",")
 
 
-    (fires, walls, goal, bonuses, boosts)
+    (fires, walls, goal, bonuses, boosts, start)
   }
 
   def iterate(lst: Seq[(String, Int)], f: (Char, Int, Int) => Option[String]) ={
@@ -71,41 +76,48 @@ object LevelMaker extends App {
       }.toList.flatten
   }
 
-  def makeFile(l: List[(String, String, String, String, String)]) = {
+  def makeFile(l: List[(String, String, String, String, String, String)]) = {
     val content = s"""module Levels
-     ( getWalls, getFires, getGoal, getBonuses, getBoosts) where
+     ( getWalls, getFires, getGoal, getBonuses, getBoosts, getStart) where
 
 --level1 : {a | fires : List {b | x: Float, y: Float, size: Float}, walls: List {c | x: Float, y: Float, size: Float} }
 getWalls l = case l of
   ${l.zipWithIndex.map {
-      case ((fires, walls, goal, bonus, _), lvl) => (lvl+1)+" -> ["+walls+"]\n  "
+      case ((fires, walls, goal, bonus, _, _), lvl) => (lvl+1)+" -> ["+walls+"]\n  "
     }.mkString
   }
   _ -> []
 getFires l = case l of
   ${l.zipWithIndex.map {
-      case ((fires, walls, goal, bonus, _), lvl) => (lvl+1)+" -> ["+fires+"]\n  "
+      case ((fires, walls, goal, bonus, _, _), lvl) => (lvl+1)+" -> ["+fires+"]\n  "
     }.mkString
   }
   _ -> []
 getGoal l = case l of
   ${l.zipWithIndex.map {
-      case ((fires, walls, goal, bonus, _), lvl) => (lvl+1)+" -> "+goal+"\n  "
+      case ((fires, walls, goal, bonus, _, _), lvl) => (lvl+1)+" -> "+goal+"\n  "
     }.mkString
   }
   _ -> getGoal 1
 getBonuses l = case l of
   ${l.zipWithIndex.map {
-      case ((fires, walls, goal, bonus, _), lvl) => (lvl+1)+" -> ["+bonus+"]\n  "
+      case ((fires, walls, goal, bonus, _, _), lvl) => (lvl+1)+" -> ["+bonus+"]\n  "
     }.mkString
   }
   _ -> []
 getBoosts l = case l of
   ${l.zipWithIndex.map {
-      case ((fires, walls, goal, bonus, boosts), lvl) => (lvl+1)+" -> ["+boosts+"]\n  "
+      case ((fires, walls, goal, bonus, boosts, _), lvl) => (lvl+1)+" -> ["+boosts+"]\n  "
     }.mkString
   }
   _ -> []
+
+getStart l = case l of
+  ${l.zipWithIndex.map {
+      case ((fires, walls, goal, bonus, boosts, start), lvl) => (lvl+1)+" -> "+start+"\n  "
+    }.mkString
+  }
+  _ -> {x=0, y=0}
     """
 
     val writer = new java.io.PrintWriter(new java.io.File("../Levels.elm"))

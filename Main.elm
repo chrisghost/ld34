@@ -21,7 +21,7 @@ type alias Ship =
   , a : Float
   , size: Float
   , sizeRatio: Float
-  , fuel: Int
+  , fuel: Float
   , boost: Float
   }
 
@@ -82,6 +82,7 @@ defaultWalls = []
 defaultBoost = 40
 
 startLevel = 1
+maxLevel = 8
 
 defaultModel : Model
 defaultModel = Model
@@ -92,24 +93,30 @@ defaultModel = Model
                   (Levels.getFires startLevel)
                   (Levels.getBonuses startLevel)
                   (Levels.getBoosts startLevel)
-                  {x= 0, y= -300, vx=0, vy=0, a=0, size= 28, sizeRatio= 1, fuel= 500, boost= 0}
+                  {x= (Levels.getStart startLevel).x, y= (Levels.getStart startLevel).y, vx=0, vy=0, a=0, size= 28, sizeRatio= 1, fuel= 500, boost= 0}
                   Menu
                   []
                   0
-                  1
+                  startLevel
                   0
 
 --model = Model [ Wall { -100 100 500 20} ] {x=0, y=0, vx=0, vy=0, a=0}
 
 loadLevel : Int -> Model -> Model
-loadLevel l model = { model |
-                     fires = Levels.getFires l
-                   , walls = Levels.getWalls l
-                   , goal = Levels.getGoal l
-                   , boosts = Levels.getBoosts l
-                   , extinguishers = Levels.getBonuses l
-                   , level = l
-                 }
+loadLevel l model = let
+                        ship = defaultModel.ship
+                        ship' = { ship | x = (Levels.getStart l).x , y = (Levels.getStart l).y }
+                    in
+                       { model |
+                           fires = Levels.getFires l
+                         , walls = Levels.getWalls l
+                         , goal = Levels.getGoal l
+                         , ship = ship'
+                         , boosts = Levels.getBoosts l
+                         , extinguishers = Levels.getBonuses l
+                         , level = l
+                         , state = Game
+                       }
 
 type alias Keys = { x: Int, y: Int }
 
@@ -130,17 +137,16 @@ rotateVec x y a = (
   , x * sin a + y * cos a
   )
 
-updateSmokes model dt button2Pressed = List.map
+updateSmokes model dt buttonUpPressed = List.map
                     (\s -> let
                                s' = physics s.vx s.vy dt s
-                               _ = log "dt = " dt
                            in
                               { s' | age = s'.age - dt }
                     )
                     (List.filter
                       (\s -> s.age > 0 && s.x > -gameWidth/2 && s.x < gameWidth/2)
                       (model.smokes ++
-                        if button2Pressed then
+                        if buttonUpPressed then
                           let
                             (vx, vy) = getvecship model.ship
                             --_ = log "model t" model.t
@@ -166,67 +172,70 @@ updateSmokes model dt button2Pressed = List.map
 
 --update : (Float, Keys) -> Model -> Model
 update (dt, keys, ltch) model =
-  case model.state of
-    Menu ->
-      let
-        button3Pressed = keys.x == 1 || List.any (\t -> t.x < 0) ltch
-        state' = if button3Pressed then Game else Menu
-      in
-         { model | state = state' }
-    Game ->
-      let
-        vec = getvecship model.ship
-        button1Pressed = keys.x == -1 || List.any (\t -> t.x < 0) ltch
-        button2Pressed = keys.y ==  1 || List.any (\t -> t.x > 0) ltch
+  let
+      buttonRightPressed = keys.x == 1 --|| List.any (\t -> t.x < 0) ltch
+      buttonLeftPressed = keys.x == -1 --|| List.any (\t -> t.x < 0) ltch
+      buttonUpPressed = keys.y ==  1 --|| List.any (\t -> t.x > 0) ltch
+      buttonDownPressed = keys.y ==  -1 --|| List.any (\t -> t.x > 0) ltch
+  in
+    case model.state of
+      Menu ->
+        let
+          state' = if buttonRightPressed then Game else Menu
+        in
+           { model | state = state' }
+      Game ->
+        let
+          vec = getvecship model.ship
 
-        extinguishers' = List.map (physics 0 -model.ship.vy dt) model.extinguishers
-                          |> List.filter (\e -> not (collisionCircle e model.ship))
+          extinguishers' = List.map (physics 0 -model.ship.vy dt) model.extinguishers
+                            |> List.filter (\e -> not (collisionCircle e model.ship))
 
-        boosts' = List.map (physics 0 -model.ship.vy dt) model.boosts
-                          |> List.filter (\e -> not (collisionCircle e model.ship))
+          boosts' = List.map (physics 0 -model.ship.vy dt) model.boosts
+                            |> List.filter (\e -> not (collisionCircle e model.ship))
 
 
-        ship' = model.ship
-          |> rotateShip button1Pressed dt
-          |> thrust button2Pressed dt
-          |> physics model.ship.vx 0 dt
-          |> friction dt
-          |> (\e -> if (List.length extinguishers') < (List.length model.extinguishers) then
-                       {e | fuel = defaultModel.ship.fuel }
-                       else e
-                     )
-          |> (\e -> if (List.length boosts') < (List.length model.boosts) then
-                       {e | boost = defaultBoost }
-                       else e
-                     )
+          ship' = model.ship
+            |> rotateShip buttonLeftPressed dt
+            |> thrust buttonUpPressed dt
+            |> physics model.ship.vx 0 dt
+            |> friction dt
+            |> (\e -> if (List.length extinguishers') < (List.length model.extinguishers) then
+                         {e | fuel = defaultModel.ship.fuel }
+                         else e
+                       )
+            |> (\e -> if (List.length boosts') < (List.length model.boosts) then
+                         {e | boost = defaultBoost }
+                         else e
+                       )
 
-        smokes' = updateSmokes model dt ((button2Pressed && ship'.fuel > 0) || ship'.boost > 0)
+          smokes' = updateSmokes model dt ((buttonUpPressed && ship'.fuel > 0) || ship'.boost > 0)
 
-        walls' = List.map (physics 0 -model.ship.vy dt) model.walls
+          walls' = List.map (physics 0 -model.ship.vy dt) model.walls
 
-        goal' = physics 0 -model.ship.vy dt model.goal
+          goal' = physics 0 -model.ship.vy dt model.goal
 
-        fires' = List.map (physics 0 -model.ship.vy dt) model.fires
-                  |> List.filter (\f -> List.all (\x -> not x) (List.map (\s -> collisionCircle s f) smokes' ))
-                  |> List.map (\f -> 
-                                if (model.t%10) > 7 then
-                                   let
-                                     inc = (toFloat
-                                       (randomInt (
-                                         round (f.x + f.y + toFloat model.t)
-                                       ) 0 4)
-                                     ) / 10
-                                   in
-                                { f
-                                | halo =
+          fires' = List.map (physics 0 -model.ship.vy dt) model.fires
+                    |> List.filter (\f -> List.all (\x -> not x) (List.map (\s -> collisionCircle s f) smokes' ))
+                    |> List.map (\f -> 
+                                  if (model.t%10) > 7 then
+                                     let
+                                       inc = (toFloat
+                                         (randomInt (
+                                           round (f.x + f.y + toFloat model.t)
+                                         ) 0 4)
+                                       ) / 10
+                                     in
+                                  { f
+                                  | halo =
 
-                                  if f.halo + inc > 1.5 then f.halo + inc - 0.7 else f.halo + inc
+                                    if f.halo + inc > 1.5 then f.halo + inc - 0.7 else f.halo + inc
 
-                                  --max f.size ((f.size * 2) * (toFloat ( randomInt (round (f.x + f.y + toFloat model.t)) 0 10) / 10))
-                                }
-                                else
-                                f
-                )
+                                    --max f.size ((f.size * 2) * (toFloat ( randomInt (round (f.x + f.y + toFloat model.t)) 0 10) / 10))
+                                  }
+                                  else
+                                  f
+                  )
         
 --        fires'' = if randomInt model.t 0 100 < 10 then
 --                     case (List.head (List.take (randomInt model.t 0 ((List.length fires') - 1)) fires')) of
@@ -234,7 +243,7 @@ update (dt, keys, ltch) model =
 --                       Nothing -> fires'
 --                  else fires'
 
-        state' = if (List.any identity (
+          state' = if (List.any identity (
                         (List.map (collision {ship' | size = 3 } ) walls') ++
                         [ship'.x < -gameWidth/2, ship'.x > gameWidth/2]
                         --List.map (collision ship') model.defaultWalls
@@ -262,32 +271,32 @@ update (dt, keys, ltch) model =
           t = model.t + round dt,
           fps = 1000 / (20 * dt)
         }
-    state ->
-      let
-        ship = (model.ship)
-                  |> physics model.ship.vx model.ship.vy dt
-                  |> friction dt
-        ship' = case state of
-          Dead Fall -> { ship | sizeRatio = ship.sizeRatio * 0.95 }
-          _ -> ship
+      state ->
+        let
+          ship = (model.ship)
+                    |> physics model.ship.vx model.ship.vy dt
+                    |> friction dt
+          ship' = case state of
+            Dead Fall -> { ship | sizeRatio = ship.sizeRatio * 0.95 }
+            _ -> ship
 
-        smokes' = updateSmokes model dt False
+          smokes' = updateSmokes model dt False
 
-        button3Pressed = keys.x ==  1 --|| List.any (\t -> t.x > 0) ltch
-        button4Pressed = keys.y ==  -1 --|| List.any (\t -> t.x > 0) ltch
+          --state' = if buttonRightPressed || (buttonLeftPressed && buttonDownPressed) then Game else model.state
 
-        state' = if button3Pressed || button4Pressed then Game else model.state
+          --ship'' = if buttonRightPressed || (buttonLeftPressed && buttonDownPressed) then defaultModel.ship else ship'
 
-        ship'' = if button3Pressed || button4Pressed then defaultModel.ship
-                                      else ship'
+        in
+           let
+              model' = { model |  ship = ship', smokes = smokes' } --, state = state' }
 
-        model' = if button3Pressed then
-                        (loadLevel (model.level + 1) model)
-                 else if button4Pressed then
-                        (loadLevel model.level model)
-                 else model
-      in
-        { model' | ship = ship'', smokes = smokes', state = state' }
+              model'' = if (buttonRightPressed && state == Won) || (buttonDownPressed && buttonLeftPressed) then
+                           (loadLevel (if model'.level == maxLevel then model'.level else model'.level + 1) model')
+                       else if buttonRightPressed || (state == Won && buttonDownPressed)then
+                           (loadLevel model'.level model')
+                       else model'
+           in
+             model''
 
 
 --findAdjacent : List Fire -> Fire -> Fire
@@ -305,7 +314,7 @@ update (dt, keys, ltch) model =
 
 rotateShip : Bool -> Float -> Ship -> Ship
 rotateShip x dt ship = if x then
-                          { ship | a = ship.a + (dt * 0.1) }
+                          { ship | a = ship.a + (dt * 0.1), fuel = ( ship.fuel - (dt/2) ) }
                        else
                           ship
 
@@ -321,7 +330,7 @@ thrust y dt ship = if (y && ship.fuel > 0) || ship.boost > 0 then
                          ship |
                                 vx = ship.vx + xt,
                                 vy = ship.vy + yt,
-                                fuel = if ship.boost <= 0 then (ship.fuel - round dt)
+                                fuel = if ship.boost <= 0 then (ship.fuel - dt)
                                           else ship.fuel
                                ,
                                 boost = if ship.boost >= 0 then ship.boost - dt
@@ -344,7 +353,7 @@ collisionCircle a b = let
                          dst < (a.size + b.size)
 
 collision : Ship -> Wall -> Bool
-collision ship wall = (dist (ship.x, ship.y) (getClosest ship wall)) < ship.size
+collision ship wall = (dist (ship.x, ship.y) (getClosest ship wall)) < (ship.size*0.8)
 
 dist : (Float, Float) -> (Float, Float) -> Float
 dist (x,y) (x2,y2) = (sqrt ( ((x2 - x) ^ 2) + ((y2 - y) ^ 2) ))
@@ -425,9 +434,12 @@ drawFireHalo (xr, yr) t fire = let
 drawWall : (Float, Float) -> Wall -> Form
 drawWall (xr, yr) wall = 
   --rect (wall.w * xr) (wall.h * yr)
-                        image 64 64 ("img/wall_" ++ wall.orientation ++ ".png")
+                        case wall.orientation of
+                          "" -> rect 64 64
+                                  |> filled (rgb 0 0 0)
+                                  |> move (wall.x * xr, wall.y * yr)
+                          ori -> image 64 64 ("img/wall_" ++ ori ++ ".png")
                             |> toForm
-                            --|> filled (rgb 0 0 0)
                             |> move (wall.x * xr, wall.y * yr)
 
 drawShip : (Float, Float) -> Ship -> Form
@@ -488,7 +500,7 @@ view (w',h') model =
                             , line     = Nothing
                             }
                tankMaxW = (w/3)
-               tankW = tankMaxW * (toFloat model.ship.fuel / toFloat defaultModel.ship.fuel)
+               tankW = tankMaxW * (model.ship.fuel / defaultModel.ship.fuel)
                tankX = (tankMaxW - tankW) / 2
                tankY = h/2 - h/20
                tankH = h/40
@@ -555,7 +567,13 @@ view (w',h') model =
                 (case model.state of
                   Game -> []
                   Menu -> []
-                  _ -> [
+                  Dead _ -> [
+                      Text.style {style | color = white } (Text.fromString "Press [RIGHT] to retry\n\nPress [LEFT] and [DOWN] to skip this level")
+                        |> centered
+                        |> toForm
+                        |> move (0, 0)
+                      ]
+                  Won -> [
                       Text.style {style | color = white } (Text.fromString "Press [DOWN] to retry\n\nPress [RIGHT] for next level")
                         |> centered
                         |> toForm
