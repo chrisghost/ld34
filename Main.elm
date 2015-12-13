@@ -25,17 +25,21 @@ type alias Ship =
 
 type alias Wall = Positioned { w: Float, h: Float, orientation: String }
 
+type alias Goal = Positioned { size: Float }
+
 type alias Fire = Positioned { size: Float }
 
 type alias Smoke = Positioned { vx: Float, vy: Float, age: Int, size: Float }
 
 type DeathCause = Fall | Burn
-type GameState = Menu | Game | Dead DeathCause
+type GameState = Menu | Game | Won | Dead DeathCause
+
 
 type alias Model =
   {
     defaultWalls : List Wall,
     walls : List Wall,
+    goal : Goal,
     fires : List Fire,
     ship: Ship,
     state: GameState,
@@ -72,6 +76,7 @@ defaultModel = Model
                   defaultWalls
                   --startWalls
                   Levels.level1_walls
+                  Levels.level1_goal
                   Levels.level1_fires
                   {x= 0, y= -300, vx=0, vy=0, a=0, size= 28, sizeRatio= 1}
                   Menu
@@ -80,7 +85,11 @@ defaultModel = Model
 --model = Model [ Wall { -100 100 500 20} ] {x=0, y=0, vx=0, vy=0, a=0}
 
 loadLevel1: Model -> Model
-loadLevel1 model = { model | fires = Levels.level1_fires, walls = Levels.level1_walls }
+loadLevel1 model = { model |
+                     fires = Levels.level1_fires
+                   , walls = Levels.level1_walls
+                   , goal = Levels.level1_goal
+                 }
 
 type alias Keys = { x: Int, y: Int }
 
@@ -139,8 +148,8 @@ update (dt, keys, ltch) model =
   case model.state of
     Menu ->
       let
-        button1Pressed = keys.x == -1 || List.any (\t -> t.x < 0) ltch
-        state' = if button1Pressed then Game else Menu
+        button3Pressed = keys.x == 1 || List.any (\t -> t.x < 0) ltch
+        state' = if button3Pressed then Game else Menu
       in
          { model | state = state' }
     Game ->
@@ -159,6 +168,8 @@ update (dt, keys, ltch) model =
 
         walls' = List.map (physics 0 -model.ship.vy dt) model.walls
 
+        goal' = physics 0 -model.ship.vy dt model.goal
+
         fires' = List.map (physics 0 -model.ship.vy dt) model.fires
                   |> List.filter (\f -> List.all (\x -> not x) (List.map (\s -> collisionCircle s f) smokes' ))
         
@@ -169,13 +180,16 @@ update (dt, keys, ltch) model =
 --                  else fires'
 
         state' = if (List.any identity (
-                        (List.map (collision {ship' | size = 3 } ) walls') ++ [ship'.x < -gameWidth/2, ship'.x > gameWidth/2]
+                        (List.map (collision {ship' | size = 3 } ) walls') ++
+                        [ship'.x < -gameWidth/2, ship'.x > gameWidth/2]
                         --List.map (collision ship') model.defaultWalls
                       ))
                       then
                      Dead Fall
                    else if List.any identity (List.map (collisionCircle ship') model.fires) then
                      Dead Burn
+                   else if (collisionCircle ship' model.goal) then
+                     Won
                  else
                    model.state
       in
@@ -185,34 +199,35 @@ update (dt, keys, ltch) model =
           ship = ship',
           state = state',
           smokes = smokes',
+          goal = goal',
           t = model.t + round dt
         }
-    Dead cause ->
+    state ->
       let
-          --_ = log "shrinking!" "dd"
-          ship = (model.ship)
-                    |> physics model.ship.vx model.ship.vy dt
-                    |> friction dt
-          ship' = case cause of
-            Fall -> { ship | sizeRatio = ship.sizeRatio * 0.95 }
-            Burn -> ship
+        ship = (model.ship)
+                  |> physics model.ship.vx model.ship.vy dt
+                  |> friction dt
+        ship' = case state of
+          Dead Fall -> { ship | sizeRatio = ship.sizeRatio * 0.95 }
+          _ -> ship
 
-          smokes' = updateSmokes model dt False
+        smokes' = updateSmokes model dt False
 
-          button3Pressed = keys.x ==  1 --|| List.any (\t -> t.x > 0) ltch
-          state' = if button3Pressed then Game else model.state
+        button3Pressed = keys.x ==  1 --|| List.any (\t -> t.x > 0) ltch
+        state' = if button3Pressed then Game else model.state
 
-          ship'' = if button3Pressed then { ship' |
-                                            x = defaultModel.ship.x
-                                          , y = defaultModel.ship.y
-                                          , vx = 0
-                                          , vy = 0
-                                        }
-                                        else ship'
+        ship'' = if button3Pressed then { ship' |
+                                          x = defaultModel.ship.x
+                                        , y = defaultModel.ship.y
+                                        , vx = 0
+                                        , vy = 0
+                                        , sizeRatio = 1
+                                      }
+                                      else ship'
 
-          model' = if button3Pressed then
-                      loadLevel1 model
-                      else model
+        model' = if button3Pressed then
+                    loadLevel1 model
+                    else model
       in
         { model' | ship = ship'', smokes = smokes', state = state' }
 
@@ -301,6 +316,12 @@ drawSmoke (xr, yr) smoke = image 60 60 "img/smoke.png"
                             |> toForm
                             |> move (smoke.x * xr + smoke.vx * 6, smoke.y * yr + smoke.vy * 6)
 
+drawGoal : (Float, Float) -> Goal -> Form
+  --circle (smoke.size * (xr+yr)/2) |> filled (rgb 255 255 255)
+drawGoal (xr, yr) goal = circle goal.size
+                            |> filled (rgb 0 200 0)
+                            |> move (goal.x * xr, goal.y * yr)
+
 drawFire (xr, yr) fire = group [
                       --circle (fire.size * (xr+yr)/2) |> filled (rgb 255 0 0) |> move (fire.x * xr, fire.y * yr) ,
                           image (round (64*xr)) (round (64*yr)) "img/fire.png"
@@ -358,45 +379,74 @@ view (w',h') model =
                   |> centered
                   |> toForm
                   |> move (0, 50),
-                Text.style { style | color = blue } (Text.fromString "Press Left to start")
+                Text.style { style | color = blue } (Text.fromString "Press Right to start")
                   |> centered
                   |> toForm
                   |> move (0, -250)
              ])
 
          _ ->
-            ([ rect w h
-                |> filled (rgb 205 205 205)
-              --toForm (show (getvecship model.ship))
-                --|> move (-100, -100),
-              --toForm (show model.ship.a)
-                --|> move (-100, -150)
-            ,  rect (w/2 - 300) h
-                |> filled (rgb 0 0 0)
-                |> move ( 300 + (((w/2) - 300)/2), 0)
-            ,  rect (w/2 - 300) h
-                |> filled (rgb 0 0 0)
-                |> move ( (-1 * 300) - (((w/2) - 300)/2), 0)
+           let
+               style = { typeface = [ "Times New Roman", "serif" ]
+                            , height   = Just 64
+                            , color    = red
+                            , bold     = False
+                            , italic   = False
+                            , line     = Nothing
+                            }
+           in
+              ([ rect w h
+                  |> filled (rgb 205 205 205)
+                --toForm (show (getvecship model.ship))
+                  --|> move (-100, -100),
+                --toForm (show model.ship.a)
+                  --|> move (-100, -150)
+              ,  rect (w/2 - 300) h
+                  |> filled (rgb 0 0 0)
+                  |> move ( 300 + (((w/2) - 300)/2), 0)
+              ,  rect (w/2 - 300) h
+                  |> filled (rgb 0 0 0)
+                  |> move ( (-1 * 300) - (((w/2) - 300)/2), 0)
 
-            ] ++
-            (List.map (drawWall (xRatio, yRatio)) model.walls) ++
-            (List.map (drawWall (xRatio, yRatio)) model.defaultWalls) ++
-            (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
-            (List.map (drawFire (xRatio, yRatio)) model.fires) ++
-            (case model.state of
-              Dead cause -> [
-                             drawShip (xRatio, yRatio) model.ship
-                            ] ++ (case cause of
-                              Burn -> [ toForm (show "YOU BURNED!") |> move (100, -250)
-                                , drawFire (xRatio, yRatio) model.ship ]
-                              Fall -> [toForm (show "YOU FELL!") |> move (100, -250)]) ++ [
+              ] ++
+              (List.map (drawWall (xRatio, yRatio)) model.walls) ++
+              (List.map (drawWall (xRatio, yRatio)) model.defaultWalls) ++
+              (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
+              (List.map (drawFire (xRatio, yRatio)) model.fires) ++
+              [drawGoal (xRatio, yRatio) model.goal] ++
+              (case model.state of
+                Dead cause -> [
+                               drawShip (xRatio, yRatio) model.ship
+                              ] ++ (case cause of
+                                Burn -> [
+
+                                  Text.style style (Text.fromString "YOU BURNED")
+                                    |> leftAligned
+                                    |> toForm
+                                    |> move (0, 250)
+                                  , drawFire (xRatio, yRatio) model.ship ]
+                                Fall -> [
+                                  Text.style style (Text.fromString "YOU FELL")
+                                    |> leftAligned
+                                    |> toForm
+                                    |> move (0, 250)
+                                  ]) ++ [
                                 rect w h
-                              |> filled (rgb 0 0 0)
-                              |> alpha 0.3]
-              _ -> [drawShip (xRatio, yRatio) model.ship]
-            ) 
-
-          )
+                                  |> filled (rgb 0 0 0)
+                                  |> alpha 0.3]
+                Won -> [
+                  Text.style { style | color = green } (Text.fromString "YOU WON")
+                    |> leftAligned
+                    |> toForm
+                    |> move (0, 250)
+                , drawShip (xRatio, yRatio) model.ship
+                , rect w h
+                  |> filled (rgb 0 0 0)
+                  |> alpha 0.3
+                ]
+                _ -> [drawShip (xRatio, yRatio) model.ship]
+              )
+            )
         )
 
 -- SIGNALS

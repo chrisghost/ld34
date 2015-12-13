@@ -11,6 +11,11 @@ object LevelMaker extends App {
         .toSeq
         .zipWithIndex
 
+    val goal = iterate(lines, { (c, xx, yy) =>  (c, xx, yy) match {
+      case ('X', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 32}")
+      case _ => None
+    }}).mkString(",")
+
     val fires = iterate(lines, { (c, xx, yy) =>  (c, xx, yy) match {
       case ('F', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 32}")
       case _ => None
@@ -40,7 +45,7 @@ object LevelMaker extends App {
     }}).mkString(",")
 
 
-    makeFile(fires, walls)
+    makeFile(fires, walls, goal)
   }
 
   def iterate(lst: Seq[(String, Int)], f: (Char, Int, Int) => Option[String]) ={
@@ -51,13 +56,14 @@ object LevelMaker extends App {
       }.toList.flatten
   }
 
-  def makeFile(fires: String, walls: String) = {
+  def makeFile(fires: String, walls: String, goal: String) = {
     val content = s"""module Levels
-     ( level1_walls, level1_fires ) where
+     ( level1_walls, level1_fires, level1_goal) where
 
 --level1 : {a | fires : List {b | x: Float, y: Float, size: Float}, walls: List {c | x: Float, y: Float, size: Float} }
 level1_walls = [$walls]
 level1_fires = [$fires]
+level1_goal = $goal
     """
 
     val writer = new java.io.PrintWriter(new java.io.File("../Levels.elm"))
