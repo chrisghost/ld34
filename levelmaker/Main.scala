@@ -17,7 +17,7 @@ object LevelMaker extends App {
     }}).mkString(",")
 
     val walls = iterate(lines, { (c, x, y) =>
-      List('C', '3', '=', '<', '>').contains(c) match {
+      List('C', '3', '=', '<', '>', '_', '^').contains(c) match {
         case true => {
           val orientation = c match {
             case 'C' => "ltb"
@@ -25,6 +25,8 @@ object LevelMaker extends App {
             case '3' => "rtb"
             case '>' => "l"
             case '<' => "r"
+            case '^' => "t"
+            case '_' => "b"
             case _ => "lrtb"
           }
            Some(s"""

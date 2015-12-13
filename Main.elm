@@ -6,6 +6,7 @@ import Time exposing (..)
 import Window
 import Debug exposing (..)
 import Touch
+import Text
 
 import Levels
 
@@ -29,7 +30,7 @@ type alias Fire = Positioned { size: Float }
 type alias Smoke = Positioned { vx: Float, vy: Float, age: Int, size: Float }
 
 type DeathCause = Fall | Burn
-type GameState = Game | Dead DeathCause
+type GameState = Menu | Game | Dead DeathCause
 
 type alias Model =
   {
@@ -42,7 +43,7 @@ type alias Model =
     t: Int
   }
 
-(gameWidth, gameHeight) = (600,1000)
+(gameWidth, gameHeight) = (640,1000)
 
 startWalls : List Wall
 startWalls = [
@@ -73,10 +74,13 @@ defaultModel = Model
                   Levels.level1_walls
                   Levels.level1_fires
                   {x= 0, y= -300, vx=0, vy=0, a=0, size= 28, sizeRatio= 1}
-                  Game
+                  Menu
                   []
                   0
 --model = Model [ Wall { -100 100 500 20} ] {x=0, y=0, vx=0, vy=0, a=0}
+
+loadLevel1: Model -> Model
+loadLevel1 model = { model | fires = Levels.level1_fires, walls = Levels.level1_walls }
 
 type alias Keys = { x: Int, y: Int }
 
@@ -97,22 +101,7 @@ rotateVec x y a = (
   , x * sin a + y * cos a
   )
 
---update : (Float, Keys) -> Model -> Model
-update (dt, keys, ltch) model =
-  case model.state of
-    Game ->
-      let
-        vec = getvecship model.ship
-        button1Pressed = keys.x == -1 || List.any (\t -> t.x < 0) ltch
-        button2Pressed = keys.y ==  1 || List.any (\t -> t.x > 0) ltch
-        --_ = log ">>" ltch
-        ship' = model.ship
-          |> rotateShip button1Pressed dt
-          |> thrust button2Pressed dt
-          |> physics model.ship.vx 0 dt
-          |> friction dt
-
-        smokes' = List.map
+updateSmokes model dt button2Pressed = List.map
                     (\s -> let
                                s' = physics s.vx s.vy dt s
                            in
@@ -135,14 +124,38 @@ update (dt, keys, ltch) model =
                             --_ = log "nvx nvy" (nvx, nvy)
                           in
                             [ {
-                              x=ship'.x
-                            , y=ship'.y
+                              x=model.ship.x
+                            , y=model.ship.y
                             , vx= (nvx)*10
                             , vy= (nvy)*10
                             , age= randomInt model.t 3 10
                             , size= (toFloat 10) } ]
                         else []
                     ))
+
+
+--update : (Float, Keys) -> Model -> Model
+update (dt, keys, ltch) model =
+  case model.state of
+    Menu ->
+      let
+        button1Pressed = keys.x == -1 || List.any (\t -> t.x < 0) ltch
+        state' = if button1Pressed then Game else Menu
+      in
+         { model | state = state' }
+    Game ->
+      let
+        vec = getvecship model.ship
+        button1Pressed = keys.x == -1 || List.any (\t -> t.x < 0) ltch
+        button2Pressed = keys.y ==  1 || List.any (\t -> t.x > 0) ltch
+        --_ = log ">>" ltch
+        ship' = model.ship
+          |> rotateShip button1Pressed dt
+          |> thrust button2Pressed dt
+          |> physics model.ship.vx 0 dt
+          |> friction dt
+
+        smokes' = updateSmokes model dt button2Pressed
 
         walls' = List.map (physics 0 -model.ship.vy dt) model.walls
 
@@ -156,7 +169,7 @@ update (dt, keys, ltch) model =
 --                  else fires'
 
         state' = if (List.any identity (
-                        (List.map (collision ship') walls') ++ [ship'.x < -gameWidth/2, ship'.x > gameWidth/2]
+                        (List.map (collision {ship' | size = 3 } ) walls') ++ [ship'.x < -gameWidth/2, ship'.x > gameWidth/2]
                         --List.map (collision ship') model.defaultWalls
                       ))
                       then
@@ -174,14 +187,34 @@ update (dt, keys, ltch) model =
           smokes = smokes',
           t = model.t + round dt
         }
-    Dead Fall ->
+    Dead cause ->
       let
           --_ = log "shrinking!" "dd"
           ship = (model.ship)
-          ship' = { ship | sizeRatio = ship.sizeRatio * 0.95 }
+                    |> physics model.ship.vx model.ship.vy dt
+                    |> friction dt
+          ship' = case cause of
+            Fall -> { ship | sizeRatio = ship.sizeRatio * 0.95 }
+            Burn -> ship
+
+          smokes' = updateSmokes model dt False
+
+          button3Pressed = keys.x ==  1 --|| List.any (\t -> t.x > 0) ltch
+          state' = if button3Pressed then Game else model.state
+
+          ship'' = if button3Pressed then { ship' |
+                                            x = defaultModel.ship.x
+                                          , y = defaultModel.ship.y
+                                          , vx = 0
+                                          , vy = 0
+                                        }
+                                        else ship'
+
+          model' = if button3Pressed then
+                      loadLevel1 model
+                      else model
       in
-        { model | ship = ship' }
-    Dead Burn -> model
+        { model' | ship = ship'', smokes = smokes', state = state' }
 
 
 findAdjacent : List Fire -> Fire -> Fire
@@ -303,36 +336,68 @@ view (w',h') model =
 
     (xRatio, yRatio) = (1, 1) -- ((w/gameWidth), (h/gameHeight))
   in
-    collage w' h'
-      ([ rect w h
-          |> filled (rgb 205 205 205)
-      ,  rect (w/2 - 300) h
-          |> filled (rgb 0 0 0)
-          |> move ( 300 + (((w/2) - 300)/2), 0)
-      ,  rect (w/2 - 300) h
-          |> filled (rgb 0 0 0)
-          |> move ( (-1 * 300) - (((w/2) - 300)/2), 0)
-        --toForm (show (getvecship model.ship))
-          --|> move (-100, -100),
-        --toForm (show model.ship.a)
-          --|> move (-100, -150)
-      ] ++
-      (List.map (drawWall (xRatio, yRatio)) model.walls) ++
-      (List.map (drawWall (xRatio, yRatio)) model.defaultWalls) ++
-      (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
-      (List.map (drawFire (xRatio, yRatio)) model.fires) ++
-      [drawShip (xRatio, yRatio) model.ship] ++
-      case model.state of
-        Dead Fall -> [rect w h
-                        |> filled (rgb 0 0 0)
-                        |> alpha 0.3
-                      , toForm (show "YOU FELL!")
-                        |> move (100, -250) ]
-        Dead Burn -> [toForm (show "YOU BURNED!")
-                        |> move (100, -250) ]
-        _ -> []
-    )
+     collage w' h'
+       (case model.state of
+         Menu -> 
+           let
+               style = { typeface = [ "Times New Roman", "serif" ]
+                            , height   = Just 64
+                            , color    = red
+                            , bold     = False
+                            , italic   = False
+                            , line     = Nothing
+                            }
+           in
+             ([ rect w h
+                |> filled (rgb 205 205 205),
+                Text.style style (Text.fromString "Office Fireman")
+                  |> leftAligned
+                  |> toForm
+                  |> move (0, 250),
+                Text.style { style | color = black } (Text.fromString "Controls\nLeft - Rotate\nUp - Thrust")
+                  |> centered
+                  |> toForm
+                  |> move (0, 50),
+                Text.style { style | color = blue } (Text.fromString "Press Left to start")
+                  |> centered
+                  |> toForm
+                  |> move (0, -250)
+             ])
 
+         _ ->
+            ([ rect w h
+                |> filled (rgb 205 205 205)
+              --toForm (show (getvecship model.ship))
+                --|> move (-100, -100),
+              --toForm (show model.ship.a)
+                --|> move (-100, -150)
+            ,  rect (w/2 - 300) h
+                |> filled (rgb 0 0 0)
+                |> move ( 300 + (((w/2) - 300)/2), 0)
+            ,  rect (w/2 - 300) h
+                |> filled (rgb 0 0 0)
+                |> move ( (-1 * 300) - (((w/2) - 300)/2), 0)
+
+            ] ++
+            (List.map (drawWall (xRatio, yRatio)) model.walls) ++
+            (List.map (drawWall (xRatio, yRatio)) model.defaultWalls) ++
+            (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
+            (List.map (drawFire (xRatio, yRatio)) model.fires) ++
+            (case model.state of
+              Dead cause -> [
+                             drawShip (xRatio, yRatio) model.ship
+                            ] ++ (case cause of
+                              Burn -> [ toForm (show "YOU BURNED!") |> move (100, -250)
+                                , drawFire (xRatio, yRatio) model.ship ]
+                              Fall -> [toForm (show "YOU FELL!") |> move (100, -250)]) ++ [
+                                rect w h
+                              |> filled (rgb 0 0 0)
+                              |> alpha 0.3]
+              _ -> [drawShip (xRatio, yRatio) model.ship]
+            ) 
+
+          )
+        )
 
 -- SIGNALS
 
