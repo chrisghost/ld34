@@ -4,25 +4,38 @@ object LevelMaker extends App {
   override def main(args: Array[String]) = {
     println(args.head)
     val FACTOR = 64
-    val startx = -300 + FACTOR / 2
+    val startx = -300 - FACTOR / 2
+    val starty = -500
     val lines  = scala.io.Source.fromFile(args.head)
         .getLines
         .toSeq
         .zipWithIndex
 
     val fires = iterate(lines, { (c, xx, yy) =>  (c, xx, yy) match {
-      case ('F', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${y*FACTOR}, size= 32}")
+      case ('F', x, y) => Some(s"{x= ${startx+x*FACTOR}, y= ${starty+y*FACTOR}, size= 32}")
       case _ => None
     }}).mkString(",")
 
-    val walls = iterate(lines, {
-      case ('W', x, y) => Some(s"""
+    val walls = iterate(lines, { (c, x, y) =>
+      List('C', '3', '=', '<', '>').contains(c) match {
+        case true => {
+          val orientation = c match {
+            case 'C' => "ltb"
+            case '=' => "tb"
+            case '3' => "rtb"
+            case '>' => "l"
+            case '<' => "r"
+            case _ => "lrtb"
+          }
+           Some(s"""
   { x= ${startx+x*FACTOR},
-  y= ${y*FACTOR},
+  y= ${starty+y*FACTOR},
   w = $FACTOR,
-  h = $FACTOR } """)
+  h = $FACTOR,
+  orientation = "$orientation"} """)
+        }
       case _ => None
-    }).mkString(",")
+    }}).mkString(",")
 
 
     makeFile(fires, walls)

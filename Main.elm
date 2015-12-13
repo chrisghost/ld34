@@ -22,7 +22,7 @@ type alias Ship =
   , sizeRatio: Float
   }
 
-type alias Wall = Positioned { w: Float, h: Float }
+type alias Wall = Positioned { w: Float, h: Float, orientation: String }
 
 type alias Fire = Positioned { size: Float }
 
@@ -52,10 +52,19 @@ startWalls = [
              ]
 
 defaultWalls : List Wall
-defaultWalls = [
-                 {x= 300, y= 0, w= 30, h= gameHeight }
-               , {x= -300, y= 0, w= 30, h= gameHeight }
-               ]
+defaultWalls = []
+--                 {x= 300, h= 64, w= 64, y= gameHeight/2, orientation= "l"}
+--               , {x= 300, h= 64, w= 64, y= gameHeight/2-(1*64), orientation= "l"}
+--               , {x= 300, h= 64, w= 64, y= gameHeight/2-(2*64), orientation= "l"}
+--               , {x= 300, h= 64, w= 64, y= gameHeight/2-(3*64), orientation= "l"}
+--               , {x= 300, h= 64, w= 64, y= gameHeight/2-(4*64), orientation= "l"}
+--               , {x= 300, h= 64, w= 64, y= gameHeight/2-(5*64), orientation= "l"}
+--               , {x= 300, h= 64, w= 64, y= gameHeight/2-(6*64), orientation= "l"}
+--               , {x= 300, h= 64, w= 64, y= gameHeight/2-(7*64), orientation= "l"}
+--               , {x= 300, h= 64, w= 64, y= gameHeight/2-(8*64), orientation= "l"}
+--               , {x= 300, h= 64, w= 64, y= gameHeight/2-(9*64), orientation= "l"}
+--               , {x= -300, y= 0, w= 30, h= gameHeight , orientation= "lrtb"}
+--               ]
 
 defaultModel : Model
 defaultModel = Model
@@ -267,8 +276,11 @@ drawFire (xr, yr) fire = group [
                       ]
 
 drawWall : (Float, Float) -> Wall -> Form
-drawWall (xr, yr) wall = rect (wall.w * xr) (wall.h * yr)
-                            |> filled (rgb 0 0 0)
+drawWall (xr, yr) wall = 
+  --rect (wall.w * xr) (wall.h * yr)
+                        image 64 64 ("img/wall_" ++ wall.orientation ++ ".png")
+                            |> toForm
+                            --|> filled (rgb 0 0 0)
                             |> move (wall.x * xr, wall.y * yr)
 
 drawShip : (Float, Float) -> Ship -> Form
@@ -293,7 +305,13 @@ view (w',h') model =
   in
     collage w' h'
       ([ rect w h
-          |> filled (rgb 174 238 238)
+          |> filled (rgb 205 205 205)
+      ,  rect (w/2 - 300) h
+          |> filled (rgb 0 0 0)
+          |> move ( 300 + (((w/2) - 300)/2), 0)
+      ,  rect (w/2 - 300) h
+          |> filled (rgb 0 0 0)
+          |> move ( (-1 * 300) - (((w/2) - 300)/2), 0)
         --toForm (show (getvecship model.ship))
           --|> move (-100, -100),
         --toForm (show model.ship.a)
@@ -305,7 +323,10 @@ view (w',h') model =
       (List.map (drawFire (xRatio, yRatio)) model.fires) ++
       [drawShip (xRatio, yRatio) model.ship] ++
       case model.state of
-        Dead Fall -> [toForm (show "YOU FELL!")
+        Dead Fall -> [rect w h
+                        |> filled (rgb 0 0 0)
+                        |> alpha 0.3
+                      , toForm (show "YOU FELL!")
                         |> move (100, -250) ]
         Dead Burn -> [toForm (show "YOU BURNED!")
                         |> move (100, -250) ]
