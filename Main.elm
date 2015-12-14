@@ -81,7 +81,7 @@ defaultWalls = []
 
 defaultBoost = 40
 
-startLevel = 8
+startLevel = 1
 maxLevel = 10
 
 defaultModel : Model
