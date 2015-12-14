@@ -81,7 +81,7 @@ defaultWalls = []
 
 defaultBoost = 40
 
-startLevel = 1
+startLevel = 8
 maxLevel = 10
 
 defaultModel : Model
@@ -353,7 +353,7 @@ collisionCircle a b = let
                          dst < (a.size + b.size)
 
 collision : Ship -> Wall -> Bool
-collision ship wall = if ((dist (ship.x, ship.y) (wall.x, wall.y)) < ship.size*3) then
+collision ship wall = if ((dist (ship.x, ship.y) (wall.x, wall.y)) < ship.size*5) then
                         (dist (ship.x, ship.y) (getClosest ship wall)) < (ship.size*0.8)
                       else
                         False
