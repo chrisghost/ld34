@@ -82,7 +82,7 @@ defaultWalls = []
 defaultBoost = 40
 
 startLevel = 1
-maxLevel = 8
+maxLevel = 10
 
 defaultModel : Model
 defaultModel = Model
@@ -353,7 +353,10 @@ collisionCircle a b = let
                          dst < (a.size + b.size)
 
 collision : Ship -> Wall -> Bool
-collision ship wall = (dist (ship.x, ship.y) (getClosest ship wall)) < (ship.size*0.8)
+collision ship wall = if ((dist (ship.x, ship.y) (wall.x, wall.y)) < ship.size*3) then
+                        (dist (ship.x, ship.y) (getClosest ship wall)) < (ship.size*0.8)
+                      else
+                        False
 
 dist : (Float, Float) -> (Float, Float) -> Float
 dist (x,y) (x2,y2) = (sqrt ( ((x2 - x) ^ 2) + ((y2 - y) ^ 2) ))
@@ -396,9 +399,9 @@ drawGoal (xr, yr) goal = circle goal.size
                             |> filled (rgb 0 200 0)
                             |> move (goal.x * xr, goal.y * yr)
 
-drawExtinguisher (xr, yr) ext = group [
+drawExtinguisher boost (xr, yr) ext = group [
                       --circle (fire.size * (xr+yr)/2) |> filled (rgb 255 0 0) |> move (fire.x * xr, fire.y * yr) ,
-                          image (round (64*xr)) (round (64*yr)) "img/extinguisher.png"
+                          image (round (64*xr)) (round (64*yr)) ("img/extinguisher"++(if boost then "_boost" else "")++".png")
                             |> toForm
                             |> move (ext.x * xr, ext.y * yr)
                       ]
@@ -476,18 +479,22 @@ view (w',h') model =
            in
              [ rect w h
                 |> filled (rgb 205 205 205),
-                Text.style style (Text.fromString "Office Fireman")
+                Text.style { style | line = Just Text.Under } (Text.fromString "Office Fireman")
                   |> leftAligned
                   |> toForm
                   |> move (0, 250),
-                Text.style { style | color = black } (Text.fromString "Controls\n[LEFT] Rotate\n[UP] Thrust")
-                  |> leftAligned
+                Text.style { style | height = Just 22, color = black } (Text.fromString "Created by @chradr for Ludum Dare #34\nTheme : \"Two button control\"")
+                  |> centered
                   |> toForm
-                  |> move (0, 50),
+                  |> move (0, 150),
+                Text.style { style | color = black } (Text.fromString "Controls\n[LEFT] Rotate\n[UP] Go Forward")
+                  |> centered
+                  |> toForm
+                  |> move (0, 0),
                 Text.style { style | color = blue } (Text.fromString "Press [RIGHT] to start")
                   |> centered
                   |> toForm
-                  |> move (0, -250)
+                  |> move (0, -200)
              ]
 
          _ ->
@@ -524,8 +531,8 @@ view (w',h') model =
               (List.map (drawSmoke (xRatio, yRatio)) model.smokes) ++
               --(List.map (drawFireHalo (xRatio, yRatio) model.t) model.fires) ++
               (List.map (drawFire (xRatio, yRatio)) model.fires) ++
-              (List.map (drawExtinguisher (xRatio, yRatio)) model.extinguishers) ++
-              (List.map (drawExtinguisher (xRatio, yRatio)) model.boosts) ++
+              (List.map (drawExtinguisher False (xRatio, yRatio)) model.extinguishers) ++
+              (List.map (drawExtinguisher True (xRatio, yRatio)) model.boosts) ++
               [drawGoal (xRatio, yRatio) model.goal] ++
               [ rect w (h/10)
                   |> filled ( rgba 0 0 0 0.7)
@@ -548,20 +555,20 @@ view (w',h') model =
                                   |> filled (rgb 0 0 0)
                                   |> alpha 0.3
                                   ]
-                Won -> [
-                  Text.style { style | color = green } (Text.fromString "YOU WON")
-                    |> leftAligned
-                    |> toForm
-                    |> move (0, 250)
-                , Text.style style (Text.fromString ("TIME : " ++ toString model.t))
-                    |> leftAligned
-                    |> toForm
-                    |> move (0, 150)
-                , drawShip (xRatio, yRatio) model.ship ] ++
-                [ rect w h
+                Won -> [ drawShip (xRatio, yRatio) model.ship
+                 , rect w h
                   |> filled (rgb 0 0 0)
                   |> alpha 0.3
-                ]
+                ] ++ [
+                  Text.style { style | color = green } (Text.fromString (if maxLevel == model.level then "You finished the game!" else "Level passed"))
+                    |> centered
+                    |> toForm
+                    |> move (0, 250)
+--                , Text.style style (Text.fromString ("TIME : " ++ toString model.t))
+--                    |> leftAligned
+--                    |> toForm
+--                    |> move (0, 150)
+                  ]
                 _ -> [drawShip (xRatio, yRatio) model.ship]
               ) ++
                 (case model.state of
@@ -574,7 +581,9 @@ view (w',h') model =
                         |> move (0, 0)
                       ]
                   Won -> [
-                      Text.style {style | color = white } (Text.fromString "Press [DOWN] to retry\n\nPress [RIGHT] for next level")
+                      Text.style {style | color = white } (
+                        Text.fromString ("Press [DOWN] to retry\n" ++ (if maxLevel == model.level then "\nOr refresh page to start again!" else "\nPress [RIGHT] for next level"))
+                      )
                         |> centered
                         |> toForm
                         |> move (0, 0)
